@@ -11,5 +11,6 @@ router.get('/positions', ctrl.getPositions);
 router.post('/positions/squareoff-all', ctrl.squareOffAllPositions);
 router.post('/positions/:id/squareoff', ctrl.squareOffPosition);
 router.get('/summary',   ctrl.getPortfolioSummary);
+router.get('/analytics', ctrl.getAnalytics);
 
 export default router;

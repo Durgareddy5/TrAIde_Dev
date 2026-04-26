@@ -93,6 +93,18 @@ export const getTradeLogs = async (req, res) => {
   }
 };
 
+// ─── GET /portfolio/analytics ──────────────
+export const getAnalytics = async (req, res) => {
+  try {
+    const period = req.query.period || '1Y';
+    const analytics = await portfolioService.getAnalytics(req.user.id, { period });
+    return ApiResponse.success(res, { data: analytics });
+  } catch (error) {
+    logger.error('GetAnalytics error:', { error: error.message });
+    return ApiResponse.serverError(res);
+  }
+};
+
 export default {
   getHoldings,
   getPositions,
@@ -100,4 +112,5 @@ export default {
   squareOffAllPositions,
   getPortfolioSummary,
   getTradeLogs,
+  getAnalytics,
 };

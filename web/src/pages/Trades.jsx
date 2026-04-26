@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw, Search, ChevronDown,
@@ -16,7 +17,7 @@ const TABS = [
   { key: 'sell', label: 'Sell' },
 ];
 
-const TradeRow = ({ trade }) => {
+const TradeRow = ({ trade, onOpenStock }) => {
   const [open, setOpen] = useState(false);
   const isBuy = trade.transaction_type === 'buy';
 
@@ -30,7 +31,14 @@ const TradeRow = ({ trade }) => {
       >
         {/* Symbol */}
         <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenStock?.(trade);
+            }}
+            className="flex items-center gap-2 text-left"
+          >
             <div className={`w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold
               ${isBuy ? 'bg-blue-500/10 text-blue-400' : 'bg-red-500/10 text-red-400'}`}>
               {trade.symbol?.[0]}
@@ -39,7 +47,7 @@ const TradeRow = ({ trade }) => {
               <p className="text-sm font-semibold">{trade.symbol}</p>
               <p className="text-xs text-[var(--text-tertiary)]">{trade.exchange}</p>
             </div>
-          </div>
+          </button>
         </td>
 
         {/* Type */}
@@ -113,32 +121,69 @@ const TradeRow = ({ trade }) => {
 };
 
 const Trades = () => {
+  const navigate = useNavigate();
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchTrades = async () => {
+  const LIMIT = 50;
+
+  const fetchTrades = async ({ nextPage = 1, append = false } = {}) => {
     try {
-      setLoading(true);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
 
-      const res = await tradingService.getTradeLogs();
+      const res = await tradingService.getTradeLogs({ page: nextPage, limit: LIMIT });
 
-      console.log("TRADES:", res);
+      const data = res?.data?.trades || [];
+      const pagination = res?.data?.pagination || {};
 
-      const data = res.data?.trades || [];
+      const totalPages = Number(pagination.total_pages || 1);
+      const currentPage = Number(pagination.page || nextPage);
 
-      setTrades(data);
+      const normalized = data.map((t) => ({
+        ...t,
+        quantity: Number(t.quantity || 0),
+        price: Number(t.price || 0),
+        total_value: Number(t.total_value || 0),
+        total_charges: Number(t.total_charges || 0),
+        net_value: Number(t.net_value || 0),
+      }));
+
+      setTrades((prev) => {
+        if (!append) return normalized;
+
+        const seen = new Set(prev.map((x) => x.id));
+        const merged = [...prev];
+        for (const t of normalized) {
+          if (t?.id && !seen.has(t.id)) {
+            merged.push(t);
+            seen.add(t.id);
+          }
+        }
+        return merged;
+      });
+
+      setPage(currentPage);
+      setHasMore(currentPage < totalPages);
 
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchTrades();
+    fetchTrades({ nextPage: 1, append: false });
   }, []);
 
   const filtered = trades.filter((t) => {
@@ -154,7 +199,10 @@ const Trades = () => {
       <div className="flex justify-between">
         <h1 className="text-2xl font-bold">Trades</h1>
 
-        <button onClick={fetchTrades} className="flex gap-2 items-center">
+        <button
+          onClick={() => fetchTrades({ nextPage: 1, append: false })}
+          className="flex gap-2 items-center"
+        >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
@@ -201,11 +249,32 @@ const Trades = () => {
               ? Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}><td colSpan={8}><Skeleton className="h-6 w-full" /></td></tr>
                 ))
-              : filtered.map((t) => <TradeRow key={t.id} trade={t} />)
+              : filtered.map((t) => (
+                  <TradeRow
+                    key={t.id}
+                    trade={t}
+                    onOpenStock={(trade) => navigate(`/stock/${trade.symbol}`)}
+                  />
+                ))
             }
           </tbody>
         </table>
       </div>
+
+      {!loading && filtered.length > 0 && hasMore && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => fetchTrades({ nextPage: page + 1, append: true })}
+            disabled={loadingMore}
+            className="px-4 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-primary)]
+                       text-sm text-[var(--text-primary)] disabled:opacity-60"
+            style={{padding: '0.25rem'}}
+          >
+            {loadingMore ? 'Loading...' : 'Load more'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -159,8 +159,11 @@ const HoldingRow = ({ holding, onClick }) => (
   </motion.tr>
 );
 
-const PositionRow = ({ position }) => (
-  <tr className="border-b border-[var(--border-primary)]">
+const PositionRow = ({ position, onClick }) => (
+  <tr
+    className="border-b border-[var(--border-primary)] hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer"
+    onClick={onClick}
+  >
     <td className="px-4 py-3">
       <div>
         <p className="text-sm font-semibold text-[var(--text-primary)]">{position.symbol}</p>
@@ -190,6 +193,7 @@ const Dashboard = () => {
   const [summary, setSummary] = useState(null);
   const [holdings, setHoldings] = useState([]);
   const [positions, setPositions] = useState([]);
+  const [recentTrades, setRecentTrades] = useState([]);
   const [indices, setIndices] = useState([]);
   const [chartData, setChartData] = useState([]);
   const ticks = useMarketStore((s) => s.ticks);
@@ -233,12 +237,13 @@ const Dashboard = () => {
     try {
       setRefreshing(true);
 
-      const [fundsRes, summaryRes, holdingsRes, positionsRes, indicesRes] = await Promise.all([
+      const [fundsRes, summaryRes, holdingsRes, positionsRes, indicesRes, tradesRes] = await Promise.all([
         tradingService.getFunds(),
         tradingService.getPortfolioSummary(),
         tradingService.getHoldings(),
-        tradingService.getPositions(),
+        tradingService.getPositions({ status: 'open' }),
         tradingService.getMarketIndices(),
+        tradingService.getTradeLogs({ page: 1, limit: 5 }),
       ]);
 
       setFunds(fundsRes?.data || null);
@@ -246,6 +251,16 @@ const Dashboard = () => {
       setHoldings((holdingsRes?.data || []).map(normalizeHolding));
       setPositions(positionsRes?.data || []);
       setIndices((indicesRes?.data || []).map(normalizeIndex));
+      setRecentTrades(
+        (tradesRes?.data?.trades || []).map((t) => ({
+          ...t,
+          quantity: Number(t.quantity || 0),
+          price: Number(t.price || 0),
+          total_value: Number(t.total_value || 0),
+          total_charges: Number(t.total_charges || 0),
+          net_value: Number(t.net_value || 0),
+        }))
+      );
 
       setIndexSubscriptions(
         (indicesRes?.data || [])
@@ -587,13 +602,98 @@ const Dashboard = () => {
                 </thead>
                 <tbody>
                   {positions.slice(0, 5).map((position) => (
-                    <PositionRow key={position.id || position.symbol} position={position} />
+                    <PositionRow
+                      key={position.id || position.symbol}
+                      position={position}
+                      onClick={() => navigate(`/stock/${position.symbol}`)}
+                    />
                   ))}
                 </tbody>
               </table>
             </div>
           )}
         </div>
+      </div>
+
+      <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Recent Trades</h2>
+          <button
+            onClick={() => navigate('/trades')}
+            className="text-sm text-[var(--accent-primary)] flex items-center gap-1"
+          >
+            Trades <ChevronRight size={14} />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-12 rounded-xl" />
+            ))}
+          </div>
+        ) : recentTrades.length === 0 ? (
+          <div className="text-center py-12">
+            <AlertCircle className="mx-auto mb-3 text-[var(--text-tertiary)]" size={28} />
+            <p className="text-sm text-[var(--text-secondary)]">No trades yet</p>
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">
+              Your executed trades will appear here
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="text-xs text-[var(--text-tertiary)] border-b border-[var(--border-primary)]">
+                  <th className="px-4 py-3 text-left">Stock</th>
+                  <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-right">Qty</th>
+                  <th className="px-4 py-3 text-right">Price</th>
+                  <th className="px-4 py-3 text-right">Net</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentTrades.map((t) => {
+                  const isBuy = String(t.transaction_type || '').toLowerCase() === 'buy';
+                  return (
+                    <tr
+                      key={t.id || t.trade_number}
+                      className="border-b border-[var(--border-primary)] hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer"
+                      onClick={() => navigate(`/stock/${t.symbol}`)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold
+                            ${isBuy ? 'bg-blue-500/10 text-blue-400' : 'bg-red-500/10 text-red-400'}`}>
+                            {t.symbol?.[0] || '?'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">{t.symbol}</p>
+                            <p className="text-xs text-[var(--text-tertiary)]">{formatDate(t.executed_at, 'datetime')}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={isBuy ? 'buy' : 'sell'} size="xs">
+                          {t.transaction_type}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-sm text-[var(--text-primary)]">
+                        {t.quantity}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-sm text-[var(--text-primary)]">
+                        {formatINR(t.price)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-sm font-semibold text-[var(--text-primary)]">
+                        {formatINR(t.net_value)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

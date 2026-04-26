@@ -189,13 +189,9 @@ const Positions = () => {
   try {
     setLoading(true);
 
-    const res = await tradingService.getPositions();
-
-    console.log("POSITIONS RESPONSE:", res);
+    const res = await tradingService.getPositions({ status: 'open' });
 
     const data = res.data || [];
-
-    console.log("POSITIONS DATA:", data);
 
     // 🔥 Transform backend → frontend
     const formatted = data
@@ -230,8 +226,6 @@ const Positions = () => {
         opened_at: p.opened_at,
       };
     });
-
-    console.log("FORMATTED POSITIONS:", formatted);
 
     setPositions(formatted);
 

@@ -11,38 +11,96 @@ import {
 } from 'recharts';
 import { formatINR, formatPercent, getPnLColor } from '@/utils/formatters';
 import Skeleton from '@/components/ui/Skeleton';
+import tradingService from '@/services/tradingService';
 
-/* ─── Mock data generators ───────────────────── */
-const genMonthlyPnL = () =>
-  ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar']
-  .map((m) => ({
-    month: m,
-    pnl:   Math.round((Math.random() - 0.42) * 150000),
-    trades: Math.floor(8 + Math.random() * 20),
-  }));
+const PERIODS = ['1M','3M','6M','1Y','All'];
 
-const genWinRate = () => ({
-  winning:  64, losing: 36,
-  avgWin:   12480, avgLoss: 8230,
-  bestTrade: 48600, worstTrade: -22400,
-  totalTrades: 128, winStreak: 7, lossStreak: 3,
-});
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-const genSectorAlloc = () => [
-  { name:'IT',       value:34, color:'#7C3AED' },
-  { name:'Banking',  value:28, color:'#0052FF'  },
-  { name:'Energy',   value:18, color:'#FFB300'  },
-  { name:'Pharma',   value:12, color:'#00E676'  },
-  { name:'FMCG',     value: 8, color:'#FF6B35'  },
-];
+const sectorColors = ['#0052FF','#7C3AED','#00E676','#FFB300','#FF6B35','#29B6F6','#EC4899','#A3E635'];
 
-const genTopTrades = () => [
-  { symbol:'APOLLOHOSP',name:'Apollo Hospitals', date:'15 Mar 25', type:'buy',  pnl:48600,  pct:7.82  },
-  { symbol:'BHARTIARTL',name:'Bharti Airtel',    date:'28 Feb 25', type:'buy',  pnl:32400,  pct:5.14  },
-  { symbol:'SUNPHARMA', name:'Sun Pharma',       date:'10 Feb 25', type:'buy',  pnl:24800,  pct:3.96  },
-  { symbol:'WIPRO',     name:'Wipro Ltd',        date:'05 Mar 25', type:'sell', pnl:-22400, pct:-4.62 },
-  { symbol:'TATASTEEL', name:'Tata Steel',       date:'18 Jan 25', type:'buy',  pnl:-18600, pct:-3.21 },
-];
+const toNumber = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const getPeriodCutoff = (period) => {
+  if (period === 'All') return null;
+  const now = new Date();
+
+  const months = period === '1M' ? 1 : period === '3M' ? 3 : period === '6M' ? 6 : 12;
+  const d = new Date(now);
+  d.setMonth(d.getMonth() - months);
+  return d;
+};
+
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+const monthLabel = (d) => `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`;
+
+const computeRealizedPnL = (trades) => {
+  // FIFO lots per symbol. Returns list of "closed legs" with realized pnl.
+  // Assumption: buy opens long lots; sell closes them. If sells exceed buys, treat as short.
+  const lotsBySymbol = new Map();
+  const closes = [];
+
+  const sorted = [...trades].sort((a, b) => new Date(a.executed_at) - new Date(b.executed_at));
+
+  for (const t of sorted) {
+    const symbol = String(t.symbol || '').toUpperCase();
+    if (!symbol) continue;
+
+    const qty = toNumber(t.quantity);
+    const price = toNumber(t.price);
+    if (!qty || !price) continue;
+
+    const executedAt = new Date(t.executed_at || Date.now());
+    const side = String(t.transaction_type || '').toLowerCase();
+
+    const lots = lotsBySymbol.get(symbol) || [];
+
+    if (side === 'buy') {
+      lots.push({ qty, price });
+      lotsBySymbol.set(symbol, lots);
+      continue;
+    }
+
+    if (side !== 'sell') continue;
+
+    let remaining = qty;
+    let realized = 0;
+    let buyNotional = 0;
+
+    while (remaining > 0 && lots.length > 0) {
+      const lot = lots[0];
+      const closeQty = Math.min(remaining, lot.qty);
+      realized += (price - lot.price) * closeQty;
+      buyNotional += lot.price * closeQty;
+
+      lot.qty -= closeQty;
+      remaining -= closeQty;
+
+      if (lot.qty <= 0) lots.shift();
+    }
+
+    // If selling without inventory, treat as short open. For analytics, realized is 0 here.
+    // (We could model short lots, but keeping it simple and consistent.)
+
+    if (qty - remaining > 0) {
+      closes.push({
+        symbol,
+        executed_at: executedAt.toISOString(),
+        pnl: realized,
+        invested: buyNotional,
+        type: 'sell',
+      });
+    }
+
+    lotsBySymbol.set(symbol, lots);
+  }
+
+  return closes;
+};
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -67,17 +125,58 @@ const Analytics = () => {
   const [topTrades,  setTopTrades]    = useState([]);
 
   useEffect(() => {
-    setTimeout(() => {
-      setMonthlyPnL(genMonthlyPnL());
-      setWinRate(genWinRate());
-      setSectorAlloc(genSectorAlloc());
-      setTopTrades(genTopTrades());
-      setLoading(false);
-    }, 700);
-  }, []);
+    const load = async () => {
+      try {
+        setLoading(true);
+
+        const res = await tradingService.getAnalytics({ period });
+        const data = res?.data || {};
+
+        setMonthlyPnL(data.monthly_pnl || []);
+        setWinRate(data.win_rate || null);
+
+        const sectors = (data.sector_alloc || []).map((s, idx) => ({
+          ...s,
+          color: sectorColors[idx % sectorColors.length],
+        }));
+        setSectorAlloc(sectors);
+
+        const top = (data.top_trades || []).map((t) => {
+          const d = new Date(t.date || Date.now());
+          return {
+            symbol: t.symbol,
+            name: t.symbol,
+            date: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }),
+            type: t.type,
+            pnl: toNumber(t.pnl),
+            pct: toNumber(t.pct),
+          };
+        });
+        setTopTrades(top);
+      } catch (_) {
+        setMonthlyPnL([]);
+        setWinRate({
+          winning: 0,
+          losing: 0,
+          avgWin: 0,
+          avgLoss: 0,
+          bestTrade: 0,
+          worstTrade: 0,
+          totalTrades: 0,
+          winStreak: 0,
+          lossStreak: 0,
+        });
+        setSectorAlloc([]);
+        setTopTrades([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [period]);
 
   const totalPnL = monthlyPnL.reduce((s, m) => s + m.pnl, 0);
-  const PERIODS  = ['1M','3M','6M','1Y','All'];
 
   return (
     <div className="space-y-6">
