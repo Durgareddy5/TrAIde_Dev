@@ -149,7 +149,8 @@ const PriceAlerts = () => {
             onClick={() => setShowModal(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl
                        bg-[var(--accent-primary)] text-white text-sm font-semibold"
-          >
+            style={{padding: '0.25rem'}}
+            >
             <Plus size={16}/> Add Alert
           </button>
 
@@ -184,7 +185,7 @@ const PriceAlerts = () => {
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 rounded-xl" />
+            <Skeleton key={i} className="h-20 rounded-lg" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
@@ -202,11 +203,11 @@ const PriceAlerts = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
-              className="flex items-center justify-between p-4 rounded-xl
+              className="flex items-center justify-between p-4 rounded-lg
                          bg-[var(--bg-card)]
                          border border-[var(--border-primary)]
                          hover:border-[var(--border-secondary)]"
-            >
+              style={{padding: '0.25rem'}}>
               <div>
                 <p className="font-semibold">{alert.symbol}</p>
                 <p className="text-xs text-[var(--text-tertiary)]">
@@ -239,7 +240,7 @@ const PriceAlerts = () => {
 
     <div className="w-full max-w-lg bg-[var(--bg-card)]
                     border border-[var(--border-primary)]
-                    rounded-2xl shadow-xl p-6 space-y-5">
+                    rounded-xl shadow-xl p-6 space-y-5" style={{padding: '0.25rem'}}>
 
       {/* Header */}
       <div className="flex items-center justify-between">

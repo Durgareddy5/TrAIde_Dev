@@ -91,7 +91,10 @@ const Topbar = ({ sidebarCollapsed }) => {
       style={{
         height:     TOPBAR_H,
         left:       leftOffset,
-        width:      `calc(100vw - ${leftOffset}px)`,
+        width:      `calc(100% - ${leftOffset}px)`,
+        maxWidth:  "100%",
+        right: "0px",
+        margin: "0px",
         transition: SIDEBAR_TRANSITION,
       }}
     >

@@ -62,7 +62,7 @@ const OrderBook = ({ title = 'Order Book', bids = [], asks = [], onPriceSelect }
   }, [bestBid, bestAsk]);
 
   return (
-    <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl overflow-hidden">
+    <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl overflow-hidden" style={{padding: '0.25rem'}}>
       <div className="px-4 py-3 border-b border-[var(--border-primary)]">
         <div className="text-sm font-semibold text-[var(--text-primary)]">{title}</div>
         <div className="mt-1 grid grid-cols-2 gap-2 text-[10px] font-mono text-[var(--text-tertiary)]">

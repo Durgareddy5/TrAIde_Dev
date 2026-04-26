@@ -427,7 +427,7 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
+        <div className="xl:col-span-2 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4" style={{padding: '0.25rem'}}>
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">Portfolio Trend</h2>
@@ -469,7 +469,7 @@ const Dashboard = () => {
         </div>
 
         <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4" style={{padding: '0.25rem'}}>
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Market Indices</h2>
             <button
               onClick={() => navigate('/markets')}
@@ -479,10 +479,10 @@ const Dashboard = () => {
             </button>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3" style={{padding: '0.25rem'}}>
             {loading
               ? Array.from({ length: 3 }).map((_, idx) => (
-                  <Skeleton key={idx} className="h-16 rounded-xl" />
+                  <Skeleton key={idx} className="h-16 rounded-md p-16" />
                 ))
               : indices.slice(0, 8).map((idx) => (
                   <IndexPill
@@ -499,7 +499,7 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4" style={{padding: '0.25rem'}}>
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Top Holdings</h2>
             <button
               onClick={() => navigate('/portfolio')}
@@ -524,7 +524,7 @@ const Dashboard = () => {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" style={{padding: '0.25rem'}}>
               <table className="w-full">
                 <thead>
                   <tr className="text-xs text-[var(--text-tertiary)] border-b border-[var(--border-primary)]">
@@ -550,7 +550,7 @@ const Dashboard = () => {
         </div>
 
         <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4" style={{padding: '0.25rem'}}>
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Open Positions</h2>
             <button
               onClick={() => navigate('/positions')}
@@ -575,7 +575,7 @@ const Dashboard = () => {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" style={{padding: '0.25rem'}}>
               <table className="w-full">
                 <thead>
                   <tr className="text-xs text-[var(--text-tertiary)] border-b border-[var(--border-primary)]">
@@ -597,7 +597,7 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4" style={{padding: '0.25rem'}}>
           <div className="flex items-center gap-3 mb-2">
             <IndianRupee className="text-[var(--accent-primary)]" size={18} />
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">Virtual Balance</h3>
@@ -607,7 +607,7 @@ const Dashboard = () => {
           </p>
         </div>
 
-        <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4" style={{padding: '0.25rem'}}>
           <div className="flex items-center gap-3 mb-2">
             <TrendingUp className="text-[var(--profit)]" size={18} />
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">Last Updated</h3>
@@ -617,7 +617,7 @@ const Dashboard = () => {
           </p>
         </div>
 
-        <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4" style={{padding: '0.25rem'}}>
           <div className="flex items-center gap-3 mb-2">
             <AlertCircle className="text-[var(--warning)]" size={18} />
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">Session</h3>

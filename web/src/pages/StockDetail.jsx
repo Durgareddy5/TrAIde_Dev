@@ -19,6 +19,7 @@ import useMarketStore from '@/store/marketStore';
 import useMarketSubscription from '@/hooks/useMarketSubscription';
 import OrderBook from '@/components/OrderBook';
 import MiniOrderBookSidebar from '@/components/MiniOrderBookSidebar';
+import NewsTab from "./NewsTab";
 
 /* ─── Mock stock data map ─────────────────────── */
 const STOCK_MAP = {
@@ -385,12 +386,12 @@ const OrderForm = ({ stock, selectedPrice }) => {
 
   return (
     <div className="bg-[var(--bg-card)] border border-[var(--border-primary)]
-                    rounded-2xl overflow-hidden">
+                    rounded-2xl overflow-hidden" style={{padding: '0.25rem',marginBottom: '0.25rem'}}>
       {/* Buy / Sell Toggle */}
-      <div className="grid grid-cols-2">
+      <div className="grid grid-cols-2" style={{marginBottom: '0.25rem'}}>
         <button
           onClick={() => setSide('buy')}
-          className={`py-3.5 text-sm font-bold transition-all duration-200
+          className={`py-3.5 text-sm font-bold transition-all duration-200 rounded-2xl
                        ${side === 'buy'
                          ? 'bg-[#0052FF] text-white shadow-[0_0_20px_rgba(0,82,255,0.3)]'
                          : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}`}
@@ -399,7 +400,7 @@ const OrderForm = ({ stock, selectedPrice }) => {
         </button>
         <button
           onClick={() => setSide('sell')}
-          className={`py-3.5 text-sm font-bold transition-all duration-200
+          className={`py-3.5 text-sm font-bold transition-all duration-200 rounded-2xl
                        ${side === 'sell'
                          ? 'bg-[var(--loss)] text-white shadow-[0_0_20px_rgba(255,23,68,0.3)]'
                          : 'bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}`}
@@ -528,7 +529,7 @@ const OrderForm = ({ stock, selectedPrice }) => {
 
         {/* Value estimate */}
         <div className="p-3 rounded-xl bg-[var(--bg-tertiary)]
-                        border border-[var(--border-primary)] space-y-1.5">
+                        border border-[var(--border-primary)] space-y-1.5" style={{padding: '0.25rem'}}>
           {[
             { label:'Est. Value', value: formatINR(estValue) },
             { label:'Charges',   value: `~${formatINR(charges)}` },
@@ -1014,7 +1015,7 @@ useEffect(() => {
 
           {/* Chart card */}
           <div className="bg-[var(--bg-card)] border border-[var(--border-primary)]
-                          rounded-2xl overflow-hidden">
+                          rounded-xl overflow-hidden" style={{padding: '0.25rem'}}>
             {/* Interval selector */}
             <div className="flex items-center justify-between px-5 py-3
                             border-b border-[var(--border-primary)]">
@@ -1078,10 +1079,10 @@ useEffect(() => {
 
           {/* Info tabs */}
           <div className="bg-[var(--bg-card)] border border-[var(--border-primary)]
-                          rounded-2xl overflow-hidden">
+                          rounded-xl overflow-hidden" style={{padding: '0.25rem'}}>
             {/* Tab nav */}
             <div className="flex border-b border-[var(--border-primary)]
-                            overflow-x-auto scrollbar-none">
+                            overflow-x-auto scrollbar-none" style={{gap:"0.5rem"}}>
               {INFO_TABS.map((tab) => (
                 <button key={tab.key}
                   onClick={() => setInfoTab(tab.key)}
@@ -1116,7 +1117,7 @@ useEffect(() => {
                   ].map(({ label, value, color }) => (
                     <div key={label}
                          className="p-3 rounded-xl bg-[var(--bg-tertiary)]
-                                    border border-[var(--border-primary)]">
+                                    border border-[var(--border-primary)]" style={{padding: '0.25rem'}}>
                       <p className="text-[10px] text-[var(--text-tertiary)]
                                     uppercase tracking-wider mb-1">{label}</p>
                       <p className={`text-sm font-mono font-semibold
@@ -1143,7 +1144,7 @@ useEffect(() => {
                   ].map(({ label, value }) => (
                     <div key={label}
                          className="p-3 rounded-xl bg-[var(--bg-tertiary)]
-                                    border border-[var(--border-primary)]">
+                                    border border-[var(--border-primary)]" style={{padding: '0.25rem'}}>
                       <p className="text-[10px] text-[var(--text-tertiary)]
                                     uppercase tracking-wider mb-1">{label}</p>
                       <p className="text-sm font-mono font-semibold
@@ -1236,52 +1237,7 @@ useEffect(() => {
               )}
 
               {/* News */}
-              {infoTab === 'news' && (
-                <div className="space-y-3">
-                  {[
-                    { time:'2h ago',  title:`${symbol} Q4 results beat estimates; revenue up 12% YoY`,
-                      source:'Economic Times', tag:'Earnings' },
-                    { time:'4h ago',  title:`Analysts upgrade ${symbol} to BUY with target ₹${
-                        stock ? Math.round(stock.price * 1.15) : '—'}`,
-                      source:'Moneycontrol', tag:'Analyst Call' },
-                    { time:'1d ago',  title:`NSE announces changes in F&O margin requirements`,
-                      source:'NSE India', tag:'Regulatory' },
-                    { time:'2d ago',  title:`${stock?.sector || ''} sector outlook: FY26 growth estimates revised upward`,
-                      source:'Bloomberg Quint', tag:'Sector Update' },
-                  ].map((news, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity:0, y:10 }}
-                      animate={{ opacity:1, y:0 }}
-                      transition={{ delay: i * 0.07 }}
-                      className="flex gap-3 p-3 rounded-xl
-                                 bg-[var(--bg-tertiary)] border border-[var(--border-primary)]
-                                 hover:border-[var(--border-secondary)]
-                                 cursor-pointer transition-all duration-200"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[var(--text-primary)]
-                                      leading-snug mb-1">{news.title}</p>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-[var(--text-tertiary)]">
-                            {news.source}
-                          </span>
-                          <span className="text-[var(--text-tertiary)]">·</span>
-                          <span className="text-xs text-[var(--text-tertiary)]">
-                            {news.time}
-                          </span>
-                          <span className="ml-auto px-2 py-0.5 rounded-md
-                                           bg-[var(--accent-primary)]/10
-                                           text-[var(--accent-primary)] text-[10px]
-                                           font-semibold border border-[var(--accent-primary)]/20">
-                            {news.tag}
-                          </span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
+              {infoTab === "news" && <NewsTab symbol={symbol} />}
             </div>
           </div>
 
@@ -1294,7 +1250,7 @@ useEffect(() => {
         </div>
 
         {/* ── Order Form (1/3) ──────────────── */}
-        <div className="space-y-4">
+        <div className="space-y-4" style={{padding: '0.25rem'}}>
           <div className="hidden xl:block">
             <MiniOrderBookSidebar currentSymbol={symbol} />
           </div>
@@ -1307,7 +1263,7 @@ useEffect(() => {
           {/* Quick Stats */}
           {!loading && stock && (
             <div className="bg-[var(--bg-card)] border border-[var(--border-primary)]
-                            rounded-2xl p-4">
+                            rounded-xl p-4" style={{padding: '0.25rem'}}>
               <h3 className="text-xs font-bold uppercase tracking-wider
                              text-[var(--text-tertiary)] mb-3">
                 52-Week Range
@@ -1319,8 +1275,7 @@ useEffect(() => {
                   className="absolute top-0 left-0 h-full rounded-full
                              bg-gradient-to-r from-[var(--loss)] to-[var(--profit)]"
                   style={{
-                    width: `${((stock.price - stock.week52L) /
-                               (stock.week52H - stock.week52L)) * 100}%`,
+                    width: "100%",
                   }}
                 />
                 <div

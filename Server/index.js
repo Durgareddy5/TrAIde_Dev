@@ -17,6 +17,9 @@ import { initMarketSocket } from './services/marketSocket.js';
 import env from './config/environment.js';
 import { initializeDatabases } from './config/database.js';
 
+
+import indianNewsRouter from './services/news/routes.js';
+
 // Load env variables
 dotenv.config();
 
@@ -104,6 +107,8 @@ app.get('/health', (req, res) => {
 
 // ─── API Routes ────────────────────────────
 app.use(env.API_PREFIX, routes);
+
+app.use(`${env.API_PREFIX}/news`, indianNewsRouter);
 
 // ─── 404 handler ───────────────────────────
 app.use((req, res) => {

@@ -52,6 +52,10 @@ const DashboardLayout = () => {
             top:    54,
             left:   sidebarW,
             height: TICKER_H,
+            width:      `calc(100% - ${sidebarW}px)`,
+            maxWidth:  "100%",
+            right: "0px",
+            margin: "0px",
           }}
         >
           <StockTicker />

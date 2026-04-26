@@ -11,6 +11,7 @@ import useAuthStore  from '@/store/authStore';
 import authService   from '@/services/authService';
 import toast         from 'react-hot-toast';
 import '@/pages/Register.css';
+import TrAIdeUrl from "@/assets/TrAIde_1.png";
 
 /* ─── Step indicator ─────────────────────────── */
 const StepDot = ({ step, current, label }) => (
@@ -110,11 +111,14 @@ const Register = () => {
         className="w-full max-w-lg relative z-10"
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
+        <div className="flex items-center gap-3 mb-8 justify-center" style={{marginBottom: '0.25rem'}}>
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br
                           from-[#0052FF] to-[#7C3AED] flex items-center
                           justify-center shadow-[0_0_25px_rgba(0,82,255,0.35)]">
-            <Zap size={20} className="text-white" />
+            <img 
+              src={TrAIdeUrl} 
+              alt="TrAIde"
+            />
           </div>
           <span className="text-2xl font-heading font-bold
                            bg-gradient-to-r from-[#0052FF] to-[#7C3AED]

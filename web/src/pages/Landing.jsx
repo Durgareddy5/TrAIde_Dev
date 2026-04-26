@@ -97,8 +97,8 @@ const Landing = () => {
   const { isAuthenticated } = useAuthStore();
   const { initTheme } = useThemeStore();
   const { scrollYProgress } = useScroll();
-  const heroY = useTransform(scrollYProgress, [0, 0.3], [0, -80]);
-  const heroOpacity = useTransform(scrollYProgress, [0, 0.3], [1, 0]);
+  const heroY = useTransform(scrollYProgress, [0, 0.3], [0, -120]);
+  const heroOpacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
 
   useEffect(() => {
     initTheme();
@@ -281,10 +281,11 @@ const Landing = () => {
             transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
             className="relative z-10 mt-16 max-w-4xl mx-auto"
           >
-            <div className="relative rounded-md overflow-hidden border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-[0_25px_80px_-12px_rgba(0,82,255,0.25)] p-2">
+            <div className="relative rounded-md overflow-hidden border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-[0_25px_80px_-12px_rgba(0,82,255,0.25)] p-2"
+              style={{maxHeight: "310px",maxWidth: "677px"}}>
 
               {/* Dashboard */}
-              <div className="aspect-video p-4">
+              <div className="aspect-video p-4" style={{padding: "0.25rem"}}>
 
                 {/* Top bar */}
                 <div className="flex items-center gap-2 mb-2">
@@ -293,13 +294,13 @@ const Landing = () => {
                     <div className="w-3 h-3 rounded-full bg-[#FEBC2E]" />
                     <div className="w-3 h-3 rounded-full bg-[#28C840]" />
                   </div>
-                  <div className="flex-1 text-center text-xs text-white/60">
+                  <div className="flex-1 text-center text-xs text-white/60" style={{justifyItems: "center"}}>
                     Dashboard Overview
                   </div>
                 </div>
 
                 {/* Stats cards */}
-                <div className="grid grid-cols-4 gap-3 mb-3">
+                <div className="grid grid-cols-4 gap-3 mb-3" style={{marginBottom: "0.75rem"}}>
                   {[
                     { title: "Revenue", value: "$12,430", change: "+8%" },
                     { title: "Users", value: "2,340", change: "+12%" },
@@ -353,7 +354,7 @@ const Landing = () => {
                   </div>
 
                   {/* Side stats */}
-                  <div className="rounded-md bg-white/[0.04] border border-white/10 p-3 backdrop-blur-md">
+                  <div className="rounded-md bg-white/[0.04] border border-white/10 p-3 backdrop-blur-md" style={{padding: "0.5rem"}}>
                     <p className="text-xs text-white/60 mb-2">
                       Top Assets
                     </p>
