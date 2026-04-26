@@ -48,7 +48,7 @@ const environment = {
   COOKIE_SAMESITE: 'strict',
 
   // CORS
-  CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3001',
+  CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3002,http://localhost:3001',
 
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: toInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
