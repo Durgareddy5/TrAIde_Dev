@@ -6,6 +6,11 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 import tradingService from '@/services/tradingService';
 import useMarketStore from '@/store/marketStore';
 import useMarketSubscription from '@/hooks/useMarketSubscription';
+import useAuthStore from '@/store/authStore';
+
+const QUOTE_CACHE_TTL_MS = 60_000;
+const quoteCache = new Map();
+const quoteBlocked = new Set();
 
 const DEFAULT_SYMBOLS = [
   'RELIANCE',
@@ -14,7 +19,6 @@ const DEFAULT_SYMBOLS = [
   'INFY',
   'ICICIBANK',
   'ITC',
-  'TATAMOTORS',
   'BHARTIARTL',
   'SBIN',
   'WIPRO',
@@ -28,6 +32,23 @@ const toNum = (v) => {
 };
 
 const normalizeKey = (v) => String(v || '').toUpperCase().trim();
+
+const getCachedQuote = (symbol) => {
+  const key = normalizeKey(symbol);
+  if (quoteBlocked.has(key)) return null;
+  const hit = quoteCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > QUOTE_CACHE_TTL_MS) {
+    quoteCache.delete(key);
+    return null;
+  }
+  return hit.data;
+};
+
+const setCachedQuote = (symbol, data) => {
+  const key = normalizeKey(symbol);
+  quoteCache.set(key, { ts: Date.now(), data });
+};
 
 const TickerItem = ({ data }) => {
   const isPositive = data.change >= 0;
@@ -54,6 +75,7 @@ const TickerItem = ({ data }) => {
 
 const StockTicker = ({ symbols = DEFAULT_SYMBOLS, className }) => {
   const prices = useMarketStore((s) => s.prices);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [indices, setIndices] = useState([]);
   const [snapshots, setSnapshots] = useState({});
 
@@ -82,28 +104,40 @@ const StockTicker = ({ symbols = DEFAULT_SYMBOLS, className }) => {
           };
         }
 
-        const quoteResults = await Promise.all(
-          (Array.isArray(symbols) ? symbols : [])
-            .filter(Boolean)
-            .map(async (sym) => {
-              try {
-                const res = await tradingService.getStockQuote(sym);
-                const q = res?.data || {};
-                return {
-                  symbol: sym,
-                  price: toNum(q.price ?? q.current_price ?? q.last_price),
-                  change: toNum(q.change),
-                  changePercent: toNum(q.changePercent ?? q.change_percent),
-                };
-              } catch (_) {
-                return null;
-              }
-            })
-        );
+        if (!isAuthenticated) {
+          if (mounted) {
+            setSnapshots(nextSnapshots);
+          }
+          return;
+        }
 
-        for (const q of quoteResults) {
-          if (!q?.symbol) continue;
-          nextSnapshots[normalizeKey(q.symbol)] = q;
+        for (const sym of (Array.isArray(symbols) ? symbols : []).filter(Boolean)) {
+          const blockKey = normalizeKey(sym);
+          if (quoteBlocked.has(blockKey)) continue;
+
+          const cached = getCachedQuote(sym);
+          if (cached) {
+            nextSnapshots[normalizeKey(sym)] = cached;
+            continue;
+          }
+
+          try {
+            const res = await tradingService.getStockQuote(sym);
+            const q = res?.data || {};
+            const normalized = {
+              symbol: sym,
+              price: toNum(q.price ?? q.current_price ?? q.last_price),
+              change: toNum(q.change),
+              changePercent: toNum(q.changePercent ?? q.change_percent),
+            };
+            nextSnapshots[normalizeKey(sym)] = normalized;
+            setCachedQuote(sym, normalized);
+          } catch (err) {
+            // Ignore individual quote failures (e.g., 404 for unsupported symbol)
+            if (err?.status === 404) {
+              quoteBlocked.add(blockKey);
+            }
+          }
         }
 
         if (mounted) {
@@ -122,10 +156,10 @@ const StockTicker = ({ symbols = DEFAULT_SYMBOLS, className }) => {
     return () => {
       mounted = false;
     };
-  }, [symbols]);
+  }, [isAuthenticated, symbols]);
 
   useMarketSubscription({
-    symbols: Array.isArray(symbols) ? symbols : [],
+    symbols: isAuthenticated && Array.isArray(symbols) ? symbols : [],
     indices,
     enabled: true,
   });
@@ -146,8 +180,13 @@ const StockTicker = ({ symbols = DEFAULT_SYMBOLS, className }) => {
       });
     }
 
+    if (!isAuthenticated) {
+      return base.filter((x) => x.symbol);
+    }
+
     for (const sym of (Array.isArray(symbols) ? symbols : [])) {
       const key = normalizeKey(sym);
+      if (quoteBlocked.has(key)) continue;
       const live = prices?.[sym] || prices?.[key] || null;
       const snap = snapshots?.[key] || null;
 
@@ -160,7 +199,7 @@ const StockTicker = ({ symbols = DEFAULT_SYMBOLS, className }) => {
     }
 
     return base.filter((x) => x.symbol);
-  }, [indices, prices, snapshots, symbols]);
+  }, [indices, isAuthenticated, prices, snapshots, symbols]);
 
   // Double the data for seamless loop
   const tickerData = [...liveData, ...liveData];

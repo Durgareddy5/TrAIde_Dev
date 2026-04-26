@@ -65,7 +65,15 @@ export const getStockQuote = async (req, res) => {
     return ApiResponse.success(res, { data: quote });
   } catch (error) {
     logger.error('GetStockQuote error:', { error: error.message });
-    return ApiResponse.notFound(res, error.message);
+    if (error?.code === 'SYMBOL_NOT_FOUND') {
+      return ApiResponse.notFound(res, error.message);
+    }
+
+    return ApiResponse.error(res, {
+      statusCode: 502,
+      message: error?.message || 'Upstream quote provider error',
+      code: 'UPSTREAM_QUOTE_ERROR',
+    });
   }
 };
 

@@ -152,11 +152,62 @@ const getStockQuote = async (symbol) => {
     throw new Error('Symbol is required');
   }
 
-  const raw = await yahooFinance.quote(ySymbol);
-  const quote = mapYahooQuoteToKotakLike(raw);
+  let raw;
+  try {
+    raw = await yahooFinance.quote(ySymbol);
+  } catch (err) {
+    // Fall through to search-based fallback below.
+    raw = null;
+  }
+
+  let quote = mapYahooQuoteToKotakLike(raw);
+
+  // If direct quote failed (common for symbol formatting issues), try resolving via search.
+  if (!quote) {
+    try {
+      const rawInput = String(symbol || '').trim();
+      const baseQuery = rawInput.replace(/\.NS$/i, '').replace(/\.BO$/i, '');
+
+      const searchRes = await yahooFinance.search(baseQuery);
+      const candidates = (searchRes?.quotes || [])
+        .map((q) => q?.symbol)
+        .filter(Boolean);
+
+      // Prefer NSE equity symbols if present.
+      const fallbackSymbol =
+        candidates.find((s) => String(s).toUpperCase().endsWith('.NS')) ||
+        candidates[0];
+
+      if (fallbackSymbol) {
+        raw = await yahooFinance.quote(fallbackSymbol);
+        quote = mapYahooQuoteToKotakLike(raw);
+      }
+    } catch (_) {
+      // ignore fallback failures, handled by final error below
+    }
+  }
+
+  // Last-chance fallback: try alternate exchange suffixes for Indian equities.
+  if (!quote) {
+    const rawInput = String(symbol || '').trim().toUpperCase();
+    const base = rawInput.replace(/\.NS$/i, '').replace(/\.BO$/i, '');
+
+    for (const suffix of ['.NS', '.BO']) {
+      try {
+        raw = await yahooFinance.quote(`${base}${suffix}`);
+        quote = mapYahooQuoteToKotakLike(raw);
+        if (quote) break;
+      } catch (_) {
+        // try next suffix
+      }
+    }
+  }
 
   if (!quote) {
-    throw new Error(`No quote found for symbol: ${symbol}`);
+    // Make error explicit so controller can return a 404 only for true not-found.
+    const e = new Error(`No quote found for symbol: ${symbol}`);
+    e.code = 'SYMBOL_NOT_FOUND';
+    throw e;
   }
 
   const displaySymbol = (raw?.symbol || ySymbol || '').replace(/\.NS$/i, '').replace(/\.BO$/i, '');

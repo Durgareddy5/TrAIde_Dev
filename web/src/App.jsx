@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import useThemeStore from '@/store/themeStore';
 import useAuthStore from '@/store/authStore';
+import MLPrediction from "./pages/MLPrediction";
 
 // Layout
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -76,6 +77,7 @@ const App = () => {
           <Route path="/settings"   element={<Settings />} />
           <Route path="/trades" element={<Trades />} />
           <Route path="/alerts" element={<PriceAlerts />} />
+          <Route path="/ml-prediction" element={<MLPrediction />} />
         </Route>
 
         {/* ── 404 ── */}

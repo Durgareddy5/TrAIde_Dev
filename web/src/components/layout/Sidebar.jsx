@@ -6,7 +6,7 @@ import {
   LayoutDashboard, TrendingUp, ShoppingCart, Briefcase,
   Star, Wallet, BarChart3, Settings, LogOut, ChevronLeft,
   ChevronRight, Activity, Bell, FileText, Shield,
-  Zap, IndianRupee, PieChart, LineChart, Target,
+   IndianRupee, PieChart, LineChart, Target, Zap,
 } from 'lucide-react';
 import useAuthStore from '@/store/authStore';
 import TrAIdeUrl from "@/assets/TrAIde_1.png";
@@ -36,6 +36,16 @@ const navItems = [
       { path: '/trades', label: 'Trade Log', icon: FileText },
       { path: '/analytics', label: 'Analytics', icon: PieChart },
     ],
+  },
+  {
+  section: "AI",
+  items: [
+    {
+      path: "/ml-prediction",
+      label: "AI Prediction",
+      icon: Zap
+    }
+  ]
   },
   {
     section: 'SYSTEM',

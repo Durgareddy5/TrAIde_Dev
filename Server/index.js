@@ -9,6 +9,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import dotenv from 'dotenv';
+import mlRoutes from './Routes/mlRoutes.js';
 
 import http from 'http';
 // import app from './app.js';
@@ -72,6 +73,34 @@ const limiter = rateLimit({
   max: env.RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Do not rate-limit authentication endpoints; repeated retries should not lock the UI.
+    // Also skip high-frequency market snapshot/quote endpoints used by ticker UI.
+    const p = req.path || '';
+    const full = req.originalUrl || `${req.baseUrl || ''}${req.path || ''}`;
+
+    const matches = (prefix) => p.startsWith(prefix) || full.startsWith(prefix);
+
+    return (
+      // When mounted at env.API_PREFIX, req.path is like '/auth/login' (no prefix).
+      matches('/auth/') ||
+      matches('/stocks/') ||
+      matches('/market/status') ||
+      matches('/market/indices') ||
+      matches('/market/top-gainers') ||
+      matches('/market/top-losers') ||
+      matches('/market/most-active') ||
+
+      // Also support full prefixed matching for safety.
+      matches(`${env.API_PREFIX}/auth/`) ||
+      matches(`${env.API_PREFIX}/stocks/`) ||
+      matches(`${env.API_PREFIX}/market/status`) ||
+      matches(`${env.API_PREFIX}/market/indices`) ||
+      matches(`${env.API_PREFIX}/market/top-gainers`) ||
+      matches(`${env.API_PREFIX}/market/top-losers`) ||
+      matches(`${env.API_PREFIX}/market/most-active`)
+    );
+  },
   message: {
     success: false,
     message: 'Too many requests from this IP. Please try again later.',
@@ -79,7 +108,7 @@ const limiter = rateLimit({
   },
 });
 
-app.use('/api', limiter);
+app.use(env.API_PREFIX, limiter);
 
 // ─── Body Parsing ──────────────────────────
 app.use(express.json({ limit: '10mb' }));
@@ -107,6 +136,9 @@ app.get('/health', (req, res) => {
 
 // ─── API Routes ────────────────────────────
 app.use(env.API_PREFIX, routes);
+
+app.use("/api/ml", mlRoutes);
+
 
 app.use(`${env.API_PREFIX}/news`, indianNewsRouter);
 

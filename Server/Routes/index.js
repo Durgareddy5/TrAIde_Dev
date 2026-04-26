@@ -23,4 +23,5 @@ router.use('/trades', tradeRoutes);
 router.use('/alerts', alertRoutes);
 router.use('/settings', settingsRoutes);
 
+
 export default router;

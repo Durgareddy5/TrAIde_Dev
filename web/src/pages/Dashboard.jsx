@@ -454,7 +454,7 @@ const Dashboard = () => {
           {loading ? (
             <SkeletonCard className="h-[320px]" />
           ) : (
-            <div className="h-[320px]">
+            <div className="h-[320px]" style={{ minHeight: 320, minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
