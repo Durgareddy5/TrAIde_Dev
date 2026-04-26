@@ -1,26 +1,33 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/utils/cn';
 import { formatPrice, formatPercent, getPnLColor } from '@/utils/formatters';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
-const MOCK_TICKER_DATA = [
-  { symbol: 'NIFTY 50', price: 23519.35, change: 142.65, changePercent: 0.61 },
-  { symbol: 'SENSEX', price: 77341.08, change: 498.24, changePercent: 0.65 },
-  { symbol: 'BANK NIFTY', price: 50892.45, change: -187.30, changePercent: -0.37 },
-  { symbol: 'RELIANCE', price: 1285.50, change: 12.35, changePercent: 0.97 },
-  { symbol: 'TCS', price: 3542.80, change: -28.15, changePercent: -0.79 },
-  { symbol: 'HDFCBANK', price: 1672.30, change: 15.60, changePercent: 0.94 },
-  { symbol: 'INFY', price: 1495.25, change: 8.40, changePercent: 0.56 },
-  { symbol: 'ICICIBANK', price: 1289.45, change: -5.20, changePercent: -0.40 },
-  { symbol: 'ITC', price: 442.85, change: 3.70, changePercent: 0.84 },
-  { symbol: 'TATAMOTORS', price: 738.90, change: -12.55, changePercent: -1.67 },
-  { symbol: 'BHARTIARTL', price: 1628.75, change: 22.30, changePercent: 1.39 },
-  { symbol: 'SBIN', price: 812.40, change: 6.85, changePercent: 0.85 },
-  { symbol: 'WIPRO', price: 472.65, change: -3.10, changePercent: -0.65 },
-  { symbol: 'SUNPHARMA', price: 1812.30, change: 24.50, changePercent: 1.37 },
-  { symbol: 'LT', price: 3542.15, change: -45.20, changePercent: -1.26 },
-  { symbol: 'INDIA VIX', price: 13.42, change: -0.58, changePercent: -4.14 },
+import tradingService from '@/services/tradingService';
+import useMarketStore from '@/store/marketStore';
+import useMarketSubscription from '@/hooks/useMarketSubscription';
+
+const DEFAULT_SYMBOLS = [
+  'RELIANCE',
+  'TCS',
+  'HDFCBANK',
+  'INFY',
+  'ICICIBANK',
+  'ITC',
+  'TATAMOTORS',
+  'BHARTIARTL',
+  'SBIN',
+  'WIPRO',
+  'SUNPHARMA',
+  'LT',
 ];
+
+const toNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const normalizeKey = (v) => String(v || '').toUpperCase().trim();
 
 const TickerItem = ({ data }) => {
   const isPositive = data.change >= 0;
@@ -45,9 +52,118 @@ const TickerItem = ({ data }) => {
   );
 };
 
-const StockTicker = ({ data = MOCK_TICKER_DATA, className }) => {
+const StockTicker = ({ symbols = DEFAULT_SYMBOLS, className }) => {
+  const prices = useMarketStore((s) => s.prices);
+  const [indices, setIndices] = useState([]);
+  const [snapshots, setSnapshots] = useState({});
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const indicesRes = await tradingService.getMarketIndices();
+        const raw = indicesRes?.data || [];
+
+        if (mounted) {
+          setIndices(raw.map((idx) => idx.name || idx.symbol).filter(Boolean));
+        }
+
+        const nextSnapshots = {};
+
+        for (const idx of raw) {
+          const label = idx.name || idx.symbol;
+          if (!label) continue;
+          nextSnapshots[normalizeKey(label)] = {
+            symbol: label,
+            price: toNum(idx.current_value),
+            change: toNum(idx.change),
+            changePercent: toNum(idx.change_percent),
+          };
+        }
+
+        const quoteResults = await Promise.all(
+          (Array.isArray(symbols) ? symbols : [])
+            .filter(Boolean)
+            .map(async (sym) => {
+              try {
+                const res = await tradingService.getStockQuote(sym);
+                const q = res?.data || {};
+                return {
+                  symbol: sym,
+                  price: toNum(q.price ?? q.current_price ?? q.last_price),
+                  change: toNum(q.change),
+                  changePercent: toNum(q.changePercent ?? q.change_percent),
+                };
+              } catch (_) {
+                return null;
+              }
+            })
+        );
+
+        for (const q of quoteResults) {
+          if (!q?.symbol) continue;
+          nextSnapshots[normalizeKey(q.symbol)] = q;
+        }
+
+        if (mounted) {
+          setSnapshots(nextSnapshots);
+        }
+      } catch (_) {
+        if (mounted) {
+          setIndices([]);
+          setSnapshots({});
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
+  }, [symbols]);
+
+  useMarketSubscription({
+    symbols: Array.isArray(symbols) ? symbols : [],
+    indices,
+    enabled: true,
+  });
+
+  const liveData = useMemo(() => {
+    const base = [];
+
+    for (const idx of indices) {
+      const key = normalizeKey(idx);
+      const live = prices?.[idx] || prices?.[key] || null;
+      const snap = snapshots?.[key] || null;
+
+      base.push({
+        symbol: idx,
+        price: toNum(live?.price ?? snap?.price),
+        change: toNum(live?.change ?? snap?.change),
+        changePercent: toNum(live?.changePercent ?? snap?.changePercent),
+      });
+    }
+
+    for (const sym of (Array.isArray(symbols) ? symbols : [])) {
+      const key = normalizeKey(sym);
+      const live = prices?.[sym] || prices?.[key] || null;
+      const snap = snapshots?.[key] || null;
+
+      base.push({
+        symbol: sym,
+        price: toNum(live?.price ?? snap?.price),
+        change: toNum(live?.change ?? snap?.change),
+        changePercent: toNum(live?.changePercent ?? snap?.changePercent),
+      });
+    }
+
+    return base.filter((x) => x.symbol);
+  }, [indices, prices, snapshots, symbols]);
+
   // Double the data for seamless loop
-  const tickerData = [...data, ...data];
+  const tickerData = [...liveData, ...liveData];
 
   return (
     <div className={cn(
