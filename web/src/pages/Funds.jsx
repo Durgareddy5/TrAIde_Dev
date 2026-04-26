@@ -9,6 +9,7 @@ import {
 import { formatINR, formatDate } from '@/utils/formatters';
 import Skeleton from '@/components/ui/Skeleton';
 import toast from 'react-hot-toast';
+import tradingService from '@/services/tradingService';
 
 const QUICK_AMOUNTS = [100000, 500000, 1000000, 5000000];
 
@@ -53,18 +54,25 @@ const Funds = () => {
   const [submitting,   setSubmitting]   = useState(false);
 
   useEffect(() => {
-    setTimeout(() => {
-      setFunds({
-        available_balance: 8542000,
-        total_balance:     10000000,
-        used_margin:       1200000,
-        blocked_amount:    258000,
-        realized_pnl:      362500,
-        unrealized_pnl:    218000,
-      });
-      setTransactions(MOCK_TRANSACTIONS);
-      setLoading(false);
-    }, 700);
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [fundsRes, txRes] = await Promise.all([
+          tradingService.getFunds(),
+          tradingService.getFundTransactions({ limit: 50, page: 1 }),
+        ]);
+        setFunds(fundsRes?.data || null);
+        setTransactions(txRes?.data || []);
+      } catch (err) {
+        toast.error(err?.message || 'Failed to load funds');
+        setFunds(null);
+        setTransactions([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
   }, []);
 
   const handleAction = async () => {
@@ -81,27 +89,29 @@ const Funds = () => {
       toast.error('Insufficient available balance');
       return;
     }
-    setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    setFunds((prev) => ({
-      ...prev,
-      available_balance:
-        activeAction === 'deposit'
-          ? prev.available_balance + amt
-          : prev.available_balance - amt,
-      total_balance:
-        activeAction === 'deposit'
-          ? prev.total_balance + amt
-          : prev.total_balance - amt,
-    }));
-    toast.success(
-      activeAction === 'deposit'
-        ? `₹${amt.toLocaleString('en-IN')} added successfully!`
-        : `₹${amt.toLocaleString('en-IN')} withdrawn successfully!`
-    );
-    setAmount('');
-    setActiveAction(null);
-    setSubmitting(false);
+
+    try {
+      setSubmitting(true);
+      if (activeAction === 'deposit') {
+        const res = await tradingService.addFunds(amt);
+        setFunds(res?.data?.fund || res?.data?.funds || res?.data?.fund || funds);
+        toast.success(res?.message || `₹${amt.toLocaleString('en-IN')} added successfully!`);
+      } else {
+        const res = await tradingService.withdrawFunds(amt);
+        setFunds(res?.data?.fund || res?.data?.funds || res?.data?.fund || funds);
+        toast.success(res?.message || `₹${amt.toLocaleString('en-IN')} withdrawn successfully!`);
+      }
+
+      const txRes = await tradingService.getFundTransactions({ limit: 50, page: 1 });
+      setTransactions(txRes?.data || []);
+
+      setAmount('');
+      setActiveAction(null);
+    } catch (err) {
+      toast.error(err?.message || 'Failed to update funds');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (

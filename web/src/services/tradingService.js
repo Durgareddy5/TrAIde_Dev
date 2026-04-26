@@ -12,12 +12,15 @@ const tradingService = {
   getHoldings: () => api.get('/portfolio/holdings'),
 
   // Positions
-  getPositions: () => api.get('/portfolio/positions'),
+  getPositions: (params) => api.get('/portfolio/positions', { params }),
   squareOffPosition: (id) => api.post(`/portfolio/positions/${id}/squareoff`),
   squareOffAllPositions: () => api.post('/portfolio/positions/squareoff-all'),
 
   // Portfolio Summary
   getPortfolioSummary: () => api.get('/portfolio/summary'),
+
+  // Analytics
+  getAnalytics: (params) => api.get('/portfolio/analytics', { params }),
 
   // Trade Logs
   getTradeLogs: (params) => api.get('/trades', { params }),

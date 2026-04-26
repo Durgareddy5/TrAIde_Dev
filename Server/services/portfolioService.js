@@ -6,6 +6,139 @@ import { Op } from 'sequelize';
 import { getStockPrice } from './orderService.js';
 import logger from '../utils/logger.js';
 
+const PERIOD_MONTHS = {
+  '1M': 1,
+  '3M': 3,
+  '6M': 6,
+  '1Y': 12,
+};
+
+const toNumber = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const getPeriodCutoff = (period) => {
+  if (!period || period === 'All') return null;
+  const months = PERIOD_MONTHS[period] || 12;
+  const now = new Date();
+  const d = new Date(now);
+  d.setMonth(d.getMonth() - months);
+  return d;
+};
+
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+const monthLabel = (d) => d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+
+const computeRealizedPnL = (trades) => {
+  // FIFO matching with support for both long and short selling.
+  // - Long lots opened by BUY, closed by SELL => pnl = (sell - buy) * qty
+  // - Short lots opened by SELL, closed by BUY => pnl = (sell - buy) * qty
+  const longLotsBySymbol = new Map();
+  const shortLotsBySymbol = new Map();
+  const closes = [];
+
+  const sorted = [...trades].sort((a, b) => new Date(a.executed_at) - new Date(b.executed_at));
+
+  for (const t of sorted) {
+    const symbol = String(t.symbol || '').toUpperCase();
+    if (!symbol) continue;
+
+    const qty = toNumber(t.quantity);
+    const price = toNumber(t.price);
+    if (!qty || !price) continue;
+
+    const side = String(t.transaction_type || '').toLowerCase();
+    const executedAt = new Date(t.executed_at || Date.now());
+
+    const longLots = longLotsBySymbol.get(symbol) || [];
+    const shortLots = shortLotsBySymbol.get(symbol) || [];
+
+    if (side === 'buy') {
+      // First close shorts (buy to cover)
+      let remaining = qty;
+      let realized = 0;
+      let invested = 0;
+      let closedQty = 0;
+
+      while (remaining > 0 && shortLots.length > 0) {
+        const lot = shortLots[0];
+        const closeQty = Math.min(remaining, lot.qty);
+        // short pnl: sold at lot.price, bought back at price
+        realized += (lot.price - price) * closeQty;
+        invested += lot.price * closeQty;
+
+        lot.qty -= closeQty;
+        remaining -= closeQty;
+        closedQty += closeQty;
+
+        if (lot.qty <= 0) shortLots.shift();
+      }
+
+      if (closedQty > 0) {
+        closes.push({
+          symbol,
+          executed_at: executedAt.toISOString(),
+          pnl: realized,
+          invested,
+          type: 'buy',
+        });
+      }
+
+      // Remaining opens new long
+      if (remaining > 0) {
+        longLots.push({ qty: remaining, price });
+      }
+
+      longLotsBySymbol.set(symbol, longLots);
+      shortLotsBySymbol.set(symbol, shortLots);
+      continue;
+    }
+
+    if (side === 'sell') {
+      // First close longs
+      let remaining = qty;
+      let realized = 0;
+      let invested = 0;
+      let closedQty = 0;
+
+      while (remaining > 0 && longLots.length > 0) {
+        const lot = longLots[0];
+        const closeQty = Math.min(remaining, lot.qty);
+        realized += (price - lot.price) * closeQty;
+        invested += lot.price * closeQty;
+
+        lot.qty -= closeQty;
+        remaining -= closeQty;
+        closedQty += closeQty;
+
+        if (lot.qty <= 0) longLots.shift();
+      }
+
+      if (closedQty > 0) {
+        closes.push({
+          symbol,
+          executed_at: executedAt.toISOString(),
+          pnl: realized,
+          invested,
+          type: 'sell',
+        });
+      }
+
+      // Remaining opens new short
+      if (remaining > 0) {
+        shortLots.push({ qty: remaining, price });
+      }
+
+      longLotsBySymbol.set(symbol, longLots);
+      shortLotsBySymbol.set(symbol, shortLots);
+    }
+  }
+
+  return closes;
+};
+
 // ─── Get all holdings with live P&L ───────
 const getHoldings = async (userId) => {
   const holdings = await Holding.findAll({
@@ -196,6 +329,147 @@ const getTradeLogs = async (userId, filters = {}) => {
   };
 };
 
+// ─── Analytics (server-side) ───────────────
+const getAnalytics = async (userId, filters = {}) => {
+  const cutoff = getPeriodCutoff(filters.period);
+
+  const tradesWhere = { user_id: userId };
+  if (cutoff) {
+    tradesWhere.executed_at = { [Op.gte]: cutoff };
+  }
+
+  const [trades, holdings] = await Promise.all([
+    TradeLog.findAll({
+      where: tradesWhere,
+      order: [['executed_at', 'ASC']],
+      limit: 10000,
+    }),
+    Holding.findAll({
+      where: { user_id: userId, quantity: { [Op.gt]: 0 } },
+    }),
+  ]);
+
+  const normalizedTrades = (trades || []).map((t) => ({
+    ...(typeof t?.toJSON === 'function' ? t.toJSON() : t),
+    quantity: toNumber(t.quantity),
+    price: toNumber(t.price),
+    total_value: toNumber(t.total_value),
+    total_charges: toNumber(t.total_charges),
+    net_value: toNumber(t.net_value),
+  }));
+
+  const closes = computeRealizedPnL(normalizedTrades);
+
+  // Monthly PnL
+  const byMonth = new Map();
+  for (const c of closes) {
+    const d = new Date(c.executed_at);
+    const key = monthKey(d);
+    const existing = byMonth.get(key) || { month: monthLabel(d), pnl: 0, trades: 0 };
+    existing.pnl += toNumber(c.pnl);
+    existing.trades += 1;
+    byMonth.set(key, existing);
+  }
+
+  const monthly_pnl = [...byMonth.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, v]) => ({
+      ...v,
+      pnl: Math.round(toNumber(v.pnl)),
+    }));
+
+  // Win/Loss stats
+  const pnls = closes.map((c) => toNumber(c.pnl));
+  const wins = pnls.filter((p) => p > 0);
+  const losses = pnls.filter((p) => p < 0);
+
+  const avgWin = wins.length ? wins.reduce((s, p) => s + p, 0) / wins.length : 0;
+  const avgLossAbs = losses.length ? Math.abs(losses.reduce((s, p) => s + p, 0) / losses.length) : 0;
+  const bestTrade = pnls.length ? Math.max(...pnls) : 0;
+  const worstTrade = pnls.length ? Math.min(...pnls) : 0;
+  const totalTrades = pnls.length;
+  const winningPct = totalTrades ? Math.round((wins.length / totalTrades) * 100) : 0;
+  const losingPct = totalTrades ? 100 - winningPct : 0;
+
+  let winStreak = 0;
+  let lossStreak = 0;
+  let currentWin = 0;
+  let currentLoss = 0;
+  for (const c of closes) {
+    const pnl = toNumber(c.pnl);
+    if (pnl > 0) {
+      currentWin += 1;
+      currentLoss = 0;
+      winStreak = Math.max(winStreak, currentWin);
+    } else if (pnl < 0) {
+      currentLoss += 1;
+      currentWin = 0;
+      lossStreak = Math.max(lossStreak, currentLoss);
+    }
+  }
+
+  const win_rate = {
+    winning: winningPct,
+    losing: losingPct,
+    avgWin: Math.round(avgWin),
+    avgLoss: Math.round(avgLossAbs),
+    bestTrade: Math.round(bestTrade),
+    worstTrade: Math.round(worstTrade),
+    totalTrades,
+    winStreak,
+    lossStreak,
+  };
+
+  // Sector allocation
+  const normalizedHoldings = (holdings || []).map((h) => ({
+    ...(typeof h?.toJSON === 'function' ? h.toJSON() : h),
+    quantity: toNumber(h.quantity),
+    current_price: toNumber(h.current_price),
+  }));
+
+  const bySector = new Map();
+  let totalValue = 0;
+  for (const h of normalizedHoldings) {
+    const sector = String(h.sector || 'Other');
+    const value = toNumber(h.quantity) * toNumber(h.current_price);
+    totalValue += value;
+    bySector.set(sector, (bySector.get(sector) || 0) + value);
+  }
+
+  const sector_alloc = [...bySector.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value]) => ({
+      name,
+      value: totalValue > 0 ? Math.round((value / totalValue) * 100) : 0,
+    }));
+
+  // Top trades
+  const top_trades = [...closes]
+    .sort((a, b) => Math.abs(toNumber(b.pnl)) - Math.abs(toNumber(a.pnl)))
+    .slice(0, 5)
+    .map((c) => {
+      const d = new Date(c.executed_at);
+      const invested = toNumber(c.invested);
+      const pnl = toNumber(c.pnl);
+      const pct = invested > 0 ? (pnl / invested) * 100 : 0;
+      return {
+        symbol: c.symbol,
+        date: d.toISOString(),
+        type: c.type,
+        pnl: Math.round(pnl),
+        pct,
+      };
+    });
+
+  return {
+    period: filters.period || '1Y',
+    monthly_pnl,
+    win_rate,
+    sector_alloc,
+    top_trades,
+  };
+};
+
 export {
   getHoldings,
   getPortfolioSummary,
@@ -203,6 +477,7 @@ export {
   squareOffPosition,
   squareOffAllPositions,
   getTradeLogs,
+  getAnalytics,
 };
 
 export default {
@@ -212,4 +487,5 @@ export default {
   squareOffPosition,
   squareOffAllPositions,
   getTradeLogs,
+  getAnalytics,
 };
