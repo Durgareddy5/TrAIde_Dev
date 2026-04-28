@@ -615,6 +615,21 @@ const StockDetail = () => {
     enabled: Boolean(symbol),
   });
 
+  // Market store selectors and local UI state (was missing causing reference errors)
+  const orderBooksByKey = useMarketStore((s) => s.orderBooksByKey);
+  const depthByKey = useMarketStore((s) => s.depthByKey);
+  const ticksByKey = useMarketStore((s) => s.ticksByKey);
+
+  const [stock, setStock] = useState(null);
+  const [interval, setUiInterval] = useState('1D');
+  const [infoTab, setInfoTab] = useState('overview');
+  const [selectedPrice, setSelectedPrice] = useState(null);
+
+  const lastStockUiUpdateRef = useRef(0);
+  const liveAggRef = useRef(null);
+  const pendingLiveCandleRef = useRef(null);
+  const liveCandleRafRef = useRef(0);
+
   const l2Symbol = useMemo(() => {
     if (!symbol) return '';
     if (isIndexSymbol(symbol)) return toYahooIndexSymbol(symbol) || toIndexDisplaySymbol(symbol);
@@ -622,6 +637,8 @@ const StockDetail = () => {
     if (raw.includes('.NS') || raw.includes('.BO') || raw.startsWith('^')) return raw;
     return `${raw}.NS`;
   }, [symbol]);
+
+  const liveTick = ticksByKey?.[l2Symbol] || null;
 
   const book = orderBooksByKey?.[l2Symbol] || null;
 
