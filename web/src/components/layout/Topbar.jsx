@@ -32,6 +32,8 @@ const Topbar = ({ sidebarCollapsed }) => {
   const ticks = useMarketStore((s) => s.ticks);
 
 
+
+
   // Close profile dropdown on outside click
   useEffect(() => {
     const handleClick = (e) => {

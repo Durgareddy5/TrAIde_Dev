@@ -1,3 +1,11 @@
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+from app.core.loader import load_models   # ✅ THIS WAS MISSING
+from app.core.config import SYMBOLS, SEQ_LENGTH
+from app.services.feature_engineering import add_features
+
 def run_prediction():
     lstm, xgb, scaler = load_models()
     results = []
