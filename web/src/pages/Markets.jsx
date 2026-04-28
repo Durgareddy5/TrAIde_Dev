@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -59,6 +59,13 @@ const ACTIVE = [
   { symbol:'ICICIBANK',name:'ICICI Bank',            price:1289.45, change:-5.20,  pct:-0.40, vol:'42.6L' },
   { symbol:'HDFCBANK', name:'HDFC Bank',             price:1672.30, change:15.60,  pct:0.94,  vol:'38.9L' },
   { symbol:'ITC',      name:'ITC Ltd',              price:442.85,  change:3.70,   pct:0.84,  vol:'1.1Cr' },
+];
+
+const COMMODITIES_TOP = [
+  { symbol: 'GC=F', name: 'Gold (Futures)' },
+  { symbol: 'SI=F', name: 'Silver (Futures)' },
+  { symbol: 'CL=F', name: 'Crude Oil (WTI)' },
+  { symbol: 'NG=F', name: 'Natural Gas' },
 ];
 
 /* mini spark line */
@@ -246,11 +253,24 @@ const Markets = () => {
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('indices');
   const [search, setSearch]  = useState('');
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [globalResults, setGlobalResults] = useState([]);
+  const [globalSearching, setGlobalSearching] = useState(false);
+  const [globalSearchError, setGlobalSearchError] = useState('');
+  const globalSearchTimerRef = useRef(0);
+  const [commoditiesList, setCommoditiesList] = useState([]);
+  const [commoditiesLoading, setCommoditiesLoading] = useState(false);
   const ticks = useMarketStore((s) => s.ticks);
   const [indicesList, setIndicesList] = useState([]);
   const [gainersList, setGainersList] = useState([]);
   const [losersList, setLosersList] = useState([]);
   const [activeList, setActiveList] = useState([]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[Markets] mounted');
+    }
+  }, []);
 
 
     useMarketSubscription({
@@ -445,6 +465,69 @@ const Markets = () => {
     loadMarketSnapshots();
   }, []);
 
+  const performGlobalSearch = async (query) => {
+    const q = String(query || '').trim();
+    if (import.meta.env.DEV) {
+      console.log('[Markets] performGlobalSearch', { q });
+    }
+    if (q.length < 2) {
+      setGlobalResults([]);
+      setGlobalSearching(false);
+      setGlobalSearchError('');
+      return;
+    }
+
+    setGlobalSearching(true);
+    setGlobalSearchError('');
+    try {
+      const res = await tradingService.searchStocks(q);
+      const rows =
+        res?.data?.data ||
+        res?.data ||
+        res?.data?.data?.data ||
+        [];
+
+      setGlobalResults(Array.isArray(rows) ? rows.slice(0, 15) : []);
+    } catch (err) {
+      console.error('Markets search error:', err);
+      const msg = err?.message || 'Search failed';
+      const code = err?.status ? `${err.status}: ` : '';
+      setGlobalSearchError(`${code}${msg}`);
+      setGlobalResults([]);
+    } finally {
+      setGlobalSearching(false);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    const q = String(globalSearch || '').trim();
+
+    if (q.length < 2) {
+      setGlobalResults([]);
+      setGlobalSearching(false);
+      setGlobalSearchError('');
+      return () => { alive = false; };
+    }
+
+    setGlobalSearching(true);
+    setGlobalSearchError('');
+    const id = window.setTimeout(async () => {
+      try {
+        if (!alive) return;
+        await performGlobalSearch(q);
+      } finally {
+        if (!alive) return;
+        setGlobalSearching(false);
+      }
+    }, 350);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(id);
+    };
+  }, [globalSearch]);
+
 
   const marketOpen = (() => {
     const now = new Date();
@@ -488,8 +571,62 @@ const Markets = () => {
     { key:'gainers',  label:'Top Gainers',  icon:TrendingUp  },
     { key:'losers',   label:'Top Losers',   icon:TrendingDown},
     { key:'active',   label:'Most Active',  icon:Flame       },
+    { key:'commodities', label:'Commodities', icon:Globe },
     { key:'heatmap',  label:'Heat Map',     icon:Activity    },
   ];
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCommodities = async () => {
+      try {
+        setCommoditiesLoading(true);
+
+        const settled = await Promise.allSettled(
+          COMMODITIES_TOP.map(async (c) => {
+            const res = await tradingService.getStockQuote(c.symbol);
+            const payload = res?.data?.data || res?.data || null;
+            const q = payload?.quote || payload?.data?.quote || payload?.quote || null;
+            const price = Number(q?.price ?? payload?.price ?? 0);
+            const prevClose = Number(q?.previous_close ?? payload?.previous_close ?? 0);
+            const change = price - prevClose;
+            const pct = prevClose ? (change / prevClose) * 100 : 0;
+
+            return {
+              symbol: c.symbol,
+              name: c.name,
+              price,
+              change,
+              pct,
+              exchange: payload?.exchange || payload?.fullExchangeName || '',
+            };
+          })
+        );
+
+        const rows = settled
+          .filter((r) => r.status === 'fulfilled')
+          .map((r) => r.value)
+          .filter(Boolean);
+
+        if (!mounted) return;
+        setCommoditiesList(rows);
+      } catch (e) {
+        if (!mounted) return;
+        setCommoditiesList([]);
+      } finally {
+        if (!mounted) return;
+        setCommoditiesLoading(false);
+      }
+    };
+
+    loadCommodities();
+    const id = window.setInterval(loadCommodities, 60_000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(id);
+    };
+  }, []);
 
   const applyLiveToStock = (stock) => {
   const live =
@@ -525,6 +662,102 @@ const Markets = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Global search (Equities + Indices + Commodities) */}
+          <div className="relative">
+            <Search size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+            <input
+              value={globalSearch}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (import.meta.env.DEV) {
+                  console.log('[Markets] search input change', { next });
+                }
+                setGlobalSearch(next);
+
+                // Hard guarantee: fire the request from here (debounced), not only via effect.
+                window.clearTimeout(globalSearchTimerRef.current);
+
+                const q = String(next || '').trim();
+                if (q.length < 2) {
+                  setGlobalResults([]);
+                  setGlobalSearching(false);
+                  setGlobalSearchError('');
+                  return;
+                }
+
+                globalSearchTimerRef.current = window.setTimeout(() => {
+                  performGlobalSearch(q);
+                }, 350);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                performGlobalSearch(e.currentTarget.value);
+              }}
+              placeholder="Search stocks, indices, commodities..."
+              className="pl-9 pr-3 py-2 rounded-lg text-sm
+                         bg-[var(--bg-card)] border border-[var(--border-primary)]
+                         text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]
+                         focus:outline-none focus:border-[var(--accent-primary)]
+                         w-64"
+            />
+
+            {String(globalSearch || '').trim().length >= 2 && (
+              <div className="absolute mt-2 w-full z-40
+                              bg-[var(--bg-card)] border border-[var(--border-primary)]
+                              rounded-lg overflow-hidden shadow-[var(--shadow-lg)]">
+                {globalSearching && (
+                  <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">
+                    Searching...
+                  </div>
+                )}
+
+                {!globalSearching && globalSearchError && (
+                  <div className="px-3 py-2 text-xs text-[var(--loss)]">
+                    {globalSearchError}
+                  </div>
+                )}
+
+                {!globalSearching && !globalSearchError && globalResults.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">
+                    No results
+                  </div>
+                )}
+
+                {globalResults.map((item) => (
+                  <button
+                    key={`${item.symbol}::${item.exchange || ''}`}
+                    onClick={() => {
+                      const sym = String(item.symbol || '').trim();
+                      if (!sym) return;
+                      setGlobalSearch('');
+                      setGlobalResults([]);
+                      navigate(`/stock/${encodeURIComponent(sym)}`);
+                    }}
+                    className="w-full text-left px-3 py-2
+                               hover:bg-[var(--bg-tertiary)]
+                               transition-colors duration-150"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                          {item.symbol}
+                        </div>
+                        <div className="text-xs text-[var(--text-secondary)] truncate">
+                          {item.name || ''}
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-mono text-[var(--text-tertiary)] whitespace-nowrap">
+                        {item.exchange || ''}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Live / Closed badge */}
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg
                            border text-xs font-semibold
@@ -632,6 +865,93 @@ const Markets = () => {
               />
               ))
           }
+        </div>
+      )}
+
+      {activeSection === 'commodities' && (
+        <div className="bg-[var(--bg-card)] border border-[var(--border-primary)]
+                        rounded-lg overflow-hidden" style={{padding: '0.25rem'}}>
+          <div className="flex items-center gap-3 px-5 py-4
+                          border-b border-[var(--border-primary)]">
+            <h2 className="text-sm font-heading font-semibold
+                           text-[var(--text-primary)] flex items-center gap-2">
+              <Globe size={18} className="text-[var(--accent-primary)]" />
+              Top Commodities
+            </h2>
+            <div className="ml-auto text-[10px] text-[var(--text-tertiary)]">
+              Search for more above
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[var(--bg-secondary)] border-b border-[var(--border-primary)]">
+                  {['Instrument','LTP','Change'].map((h) => (
+                    <th key={h}
+                        className={`px-4 py-3 text-[10px] font-bold uppercase
+                                   tracking-[0.08em] text-[var(--text-tertiary)]
+                                   ${h !== 'Instrument' ? 'text-right' : 'text-left'}`}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(commoditiesLoading ? [] : commoditiesList).map((row) => {
+                  const up = (row.pct ?? 0) >= 0;
+                  return (
+                    <tr
+                      key={row.symbol}
+                      onClick={() => navigate(`/stock/${encodeURIComponent(row.symbol)}`)}
+                      className="border-b border-[var(--border-primary)] cursor-pointer
+                                 hover:bg-[var(--bg-card-hover)] transition-colors duration-150"
+                    >
+                      <td className="px-4 py-3">
+                        <div>
+                          <div className="text-sm font-semibold text-[var(--text-primary)]">
+                            {row.symbol}
+                          </div>
+                          <div className="text-xs text-[var(--text-tertiary)] truncate max-w-[260px]">
+                            {row.name}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-sm text-[var(--text-primary)]">
+                        {Number(row.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className={`text-sm font-mono font-semibold ${getPnLColor(row.pct || 0)}`}>
+                          {up ? '+' : ''}{(row.pct || 0).toFixed(2)}%
+                        </div>
+                        <div className={`text-xs font-mono ${getPnLColor(row.change || 0)}`}>
+                          {row.change >= 0 ? '+' : ''}{(row.change || 0).toFixed(2)}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {commoditiesLoading && (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i} className="border-b border-[var(--border-primary)]">
+                      <td className="px-4 py-3" colSpan={3}>
+                        <Skeleton className="h-6 w-full" />
+                      </td>
+                    </tr>
+                  ))
+                )}
+
+                {!commoditiesLoading && commoditiesList.length === 0 && (
+                  <tr className="border-b border-[var(--border-primary)]">
+                    <td className="px-4 py-6 text-center text-sm text-[var(--text-tertiary)]" colSpan={3}>
+                      No commodity data available.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -40,11 +40,11 @@ const tradingService = {
 
   // Market search + quotes
   searchStocks: (query, exchange) =>
-    api.get('/stocks/search', { params: { q: query, ...(exchange ? { exchange } : {}) } }),
+    api.get('/market/search', { params: { q: query, ...(exchange ? { exchange } : {}) } }),
 
-  getStockQuote: (symbol) => api.get(`/stocks/${symbol}/quote`),
-  getStockDetails: (symbol) => api.get(`/stocks/${symbol}`),
-  getStockHistory: (symbol, params) => api.get(`/market/${symbol}/history`, { params }),
+  getStockQuote: (symbol) => api.get(`/stocks/${encodeURIComponent(symbol)}/quote`),
+  getStockDetails: (symbol) => api.get(`/stocks/${encodeURIComponent(symbol)}`),
+  getStockHistory: (symbol, params) => api.get(`/market/${encodeURIComponent(symbol)}/history`, { params }),
 
   // Market snapshots
   getMarketIndices: () => api.get('/market/indices'),
@@ -62,6 +62,9 @@ const tradingService = {
   createAlert: (data) => api.post('/alerts', data),
   deleteAlert: (id) => api.delete(`/alerts/${id}`),
   toggleAlert: (id) => api.put(`/alerts/${id}/toggle`),
+
+  // Settings
+  updatePreferences: (data) => api.put('/settings/preferences', data),
 };
 
 export default tradingService;

@@ -1,7 +1,9 @@
 import axios from 'axios';
 import useAuthStore from '@/store/authStore';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v1';
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? '/api/v1' : 'http://localhost:5001/api/v1');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -17,6 +19,18 @@ api.interceptors.request.use(
     const token = useAuthStore.getState().token;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    if (
+      import.meta.env.DEV &&
+      typeof config?.url === 'string' &&
+      config.url.includes('/market/search')
+    ) {
+      console.debug('[api] market search request', {
+        baseURL: config.baseURL,
+        url: config.url,
+        params: config.params,
+      });
     }
     return config;
   },

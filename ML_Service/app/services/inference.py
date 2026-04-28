@@ -1,47 +1,57 @@
-from app.core.loader import load_models
-from app.data.fetch import fetch_multi, fetch_recent
-from app.data.preprocess import load_scaler, transform, reshape_lstm
-from app.services.feature_engineering import build_features
-from app.core.config import SYMBOLS, SEQ_LENGTH
-
 def run_prediction():
-    lstm, xgb = load_models()
-    scaler = load_scaler()
-
-    hist = fetch_multi(SYMBOLS)
-    recent = fetch_recent(SYMBOLS)
-
+    lstm, xgb, scaler = load_models()
     results = []
 
     for symbol in SYMBOLS:
         try:
-            df_hist = hist[symbol].dropna()
-            close = df_hist['Close'].values.reshape(-1,1)
+            print(f"Processing {symbol}")
 
-            scaled = transform(close, scaler)
+            df = yf.download(symbol, period="20y", interval="1d")
 
-            if len(scaled) < SEQ_LENGTH:
+            # flatten columns
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            # ensure Volume exists
+            if "Volume" not in df.columns:
+                df["Volume"] = 0
+
+            df = df[["Close", "Volume"]].copy()
+            df.dropna(inplace=True)
+
+            df = add_features(df)
+
+            if len(df) < SEQ_LENGTH:
                 continue
 
-            last_seq = reshape_lstm(scaled[-SEQ_LENGTH:])
-            pred_scaled = lstm.predict(last_seq, verbose=0)
+            features = df[["returns", "ema_20", "ema_50", "vol_change"]]
+            features = features.fillna(0)
 
-            pred_price = scaler.inverse_transform(pred_scaled)[0][0]
+            scaled = scaler.transform(features)
 
-            df_recent = recent[symbol].dropna()
-            last_price = df_recent['Close'].iloc[-1]
-            volume = df_recent['Volume'].mean()
+            last_seq = scaled[-SEQ_LENGTH:]
+            last_seq = np.reshape(last_seq, (1, SEQ_LENGTH, scaled.shape[1]))
 
-            features = build_features(pred_price, last_price, volume)
+            pred_return = float(lstm.predict(last_seq, verbose=0)[0][0])
 
-            decision = xgb.predict(features)[0]
-            action = ["SELL", "HOLD", "BUY"][decision]
+            # safety clamp
+            if abs(pred_return) > 0.05:
+                pred_return = 0
+
+            last_price = float(df["Close"].iloc[-1].item())
+            predicted_price = last_price * (1 + pred_return)
+
+            # XGBoost decision
+            xgb_input = scaled[-1].reshape(1, -1)
+            action = int(xgb.predict(xgb_input)[0])
+
+            action_map = {0: "SELL", 1: "HOLD", 2: "BUY"}
 
             results.append({
                 "symbol": symbol,
-                "predicted_price": float(pred_price),
-                "last_price": float(last_price),
-                "action": action
+                "predicted_price": round(predicted_price, 2),
+                "last_price": round(last_price, 2),
+                "action": action_map[action]
             })
 
         except Exception as e:

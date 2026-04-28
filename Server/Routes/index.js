@@ -10,6 +10,7 @@ import marketRoutes from './marketRoutes.js';
 import tradeRoutes from './tradeRoutes.js';
 import alertRoutes from './alertRoutes.js';
 import settingsRoutes from './settingsRoutes.js';
+import marketCtrl from '../Controllers/marketController.js';
 
 // Mount all routes
 router.use('/auth', authRoutes);
@@ -19,6 +20,8 @@ router.use('/watchlists', watchlistRoutes);
 router.use('/funds', fundRoutes);
 router.use('/market', marketRoutes);
 router.use('/stocks', marketRoutes);
+// Compatibility: allow stock search at /stocks/search as well.
+router.get('/stocks/search', marketCtrl.searchStocks);
 router.use('/trades', tradeRoutes);
 router.use('/alerts', alertRoutes);
 router.use('/settings', settingsRoutes);

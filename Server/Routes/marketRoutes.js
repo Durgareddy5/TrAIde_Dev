@@ -18,7 +18,7 @@ router.get('/top-losers',  ctrl.getTopLosers);
 router.get('/most-active',  ctrl.getMostActive);
 
 // Search and stock detail
-router.get('/search', authenticate, ctrl.searchStocks);
+router.get('/search', ctrl.searchStocks);
 router.get('/:symbol/quote', authenticate, ctrl.getStockQuote);
 router.get('/:symbol/history', ctrl.getStockHistory);
 router.get('/:symbol', authenticate, ctrl.getStockDetails);

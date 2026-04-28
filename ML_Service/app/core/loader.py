@@ -1,12 +1,14 @@
 from tensorflow.keras.models import load_model
 import xgboost as xgb
+import joblib
 from app.core.config import MODEL_PATHS
 
 lstm_model = None
 xgb_model = None
+scaler = None
 
 def load_models():
-    global lstm_model, xgb_model
+    global lstm_model, xgb_model, scaler
 
     if lstm_model is None:
         lstm_model = load_model(MODEL_PATHS["lstm"], compile=False)
@@ -15,4 +17,7 @@ def load_models():
         xgb_model = xgb.XGBClassifier()
         xgb_model.load_model(MODEL_PATHS["xgb"])
 
-    return lstm_model, xgb_model
+    if scaler is None:
+        scaler = joblib.load(MODEL_PATHS["scaler"])
+
+    return lstm_model, xgb_model, scaler

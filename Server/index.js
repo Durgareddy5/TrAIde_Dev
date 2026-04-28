@@ -85,6 +85,7 @@ const limiter = rateLimit({
       // When mounted at env.API_PREFIX, req.path is like '/auth/login' (no prefix).
       matches('/auth/') ||
       matches('/stocks/') ||
+      matches('/market/') ||
       matches('/market/status') ||
       matches('/market/indices') ||
       matches('/market/top-gainers') ||
@@ -94,6 +95,7 @@ const limiter = rateLimit({
       // Also support full prefixed matching for safety.
       matches(`${env.API_PREFIX}/auth/`) ||
       matches(`${env.API_PREFIX}/stocks/`) ||
+      matches(`${env.API_PREFIX}/market/`) ||
       matches(`${env.API_PREFIX}/market/status`) ||
       matches(`${env.API_PREFIX}/market/indices`) ||
       matches(`${env.API_PREFIX}/market/top-gainers`) ||

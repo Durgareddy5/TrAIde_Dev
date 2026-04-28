@@ -148,7 +148,10 @@ const Topbar = ({ sidebarCollapsed }) => {
         <ThemeToggle />
 
         {/* Notifications */}
-        <button className="relative p-2 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-all duration-200">
+        <button
+          onClick={() => navigate('/alerts')}
+          className="relative p-2 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-all duration-200"
+        >
           <Bell size={20} />
           <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[var(--loss)] ring-2 ring-[var(--bg-secondary)]" />
         </button>

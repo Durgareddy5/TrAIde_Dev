@@ -11,6 +11,7 @@ import Skeleton from '@/components/ui/Skeleton';
 import toast from 'react-hot-toast';
 import useMarketStore from '@/store/marketStore';
 import useMarketSubscription from '@/hooks/useMarketSubscription';
+import tradingService from '@/services/tradingService';
 
 
 const WLCOLORS = ['#0052FF','#7C3AED','#00E676','#FFB300','#FF6B35','#29B6F6'];
@@ -72,11 +73,35 @@ const Watchlist = () => {
 
 
   useEffect(() => {
-    setTimeout(() => {
-      setWatchlists(DEFAULT_WATCHLISTS);
-      setActiveWl(DEFAULT_WATCHLISTS[0].id);
-      setLoading(false);
-    }, 600);
+    let mounted = true;
+
+    const loadWatchlists = async () => {
+      try {
+        setLoading(true);
+        const res = await tradingService.getWatchlists();
+        const rows = res?.data || [];
+        if (!mounted) return;
+
+        const list = Array.isArray(rows) ? rows : [];
+        setWatchlists(list);
+
+        const defaultWl = list.find((w) => w?.is_default) || list[0] || null;
+        setActiveWl(defaultWl?.id || null);
+      } catch (e) {
+        if (!mounted) return;
+        setWatchlists([]);
+        setActiveWl(null);
+        toast.error(e?.message || 'Failed to load watchlists');
+      } finally {
+        if (!mounted) return;
+        setLoading(false);
+      }
+    };
+
+    loadWatchlists();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
     useEffect(() => {
@@ -122,54 +147,105 @@ const Watchlist = () => {
 
   const handleCreateWl = () => {
     if (!newWlName.trim()) { toast.error('Enter a watchlist name'); return; }
-    const newWl = {
-      id: `wl${Date.now()}`, name: newWlName.trim(),
-      color: newWlColor, items: [],
+
+    const run = async () => {
+      try {
+        setLoading(true);
+        const created = await tradingService.createWatchlist({
+          name: newWlName.trim(),
+          color: newWlColor,
+        });
+
+        const wl = created?.data || created?.data?.data || null;
+        const next = wl ? [...watchlists, { ...wl, items: wl.items || [] }] : watchlists;
+        setWatchlists(next);
+        setActiveWl(wl?.id || activeWl);
+        setNewWlName('');
+        setShowCreate(false);
+        toast.success(`"${wl?.name || 'Watchlist'}" watchlist created!`);
+      } catch (e) {
+        toast.error(e?.message || 'Failed to create watchlist');
+      } finally {
+        setLoading(false);
+      }
     };
-    setWatchlists((prev) => [...prev, newWl]);
-    setActiveWl(newWl.id);
-    setNewWlName('');
-    setShowCreate(false);
-    toast.success(`"${newWl.name}" watchlist created!`);
+
+    run();
   };
 
   const handleDeleteWl = (id) => {
-    setWatchlists((prev) => prev.filter((w) => w.id !== id));
-    if (activeWl === id && watchlists.length > 1) {
-      setActiveWl(watchlists.find((w) => w.id !== id)?.id);
-    }
-    toast.success('Watchlist deleted');
+    const run = async () => {
+      try {
+        setLoading(true);
+        await tradingService.deleteWatchlist(id);
+        const next = watchlists.filter((w) => w.id !== id);
+        setWatchlists(next);
+        if (activeWl === id) {
+          const fallback = next.find((w) => w?.is_default) || next[0] || null;
+          setActiveWl(fallback?.id || null);
+        }
+        toast.success('Watchlist deleted');
+      } catch (e) {
+        toast.error(e?.message || 'Failed to delete watchlist');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    run();
   };
 
-  const handleRemoveItem = (symbol) => {
-    setWatchlists((prev) =>
-      prev.map((w) =>
-        w.id === activeWl
-          ? { ...w, items: w.items.filter((i) => i.symbol !== symbol) }
-          : w
-      )
-    );
-    toast.success(`${symbol} removed from watchlist`);
+  const handleRemoveItem = (item) => {
+    const run = async () => {
+      try {
+        if (!item?.id) return;
+        setLoading(true);
+        await tradingService.removeFromWatchlist(activeWl, item.id);
+        const res = await tradingService.getWatchlists();
+        const list = res?.data || [];
+        setWatchlists(Array.isArray(list) ? list : []);
+        toast.success(`${item.symbol} removed from watchlist`);
+      } catch (e) {
+        toast.error(e?.message || 'Failed to remove stock');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    run();
   };
 
   const handleAddStock = (stock) => {
-    if (currentWl?.items.find((i) => i.symbol === stock.symbol)) {
-      toast.error(`${stock.symbol} is already in this watchlist`);
+    const sym = String(stock?.symbol || '').trim().toUpperCase();
+    if (!sym) return;
+
+    if (currentWl?.items?.find((i) => String(i.symbol || '').toUpperCase() === sym)) {
+      toast.error(`${sym} is already in this watchlist`);
       return;
     }
-    setWatchlists((prev) =>
-      prev.map((w) =>
-        w.id === activeWl
-          ? { ...w, items: [...w.items,
-              { ...stock, price: 1000 + Math.random() * 2000,
-                change: (Math.random() - 0.5) * 50,
-                pct: (Math.random() - 0.5) * 5 }] }
-          : w
-      )
-    );
-    toast.success(`${stock.symbol} added to watchlist`);
-    setShowAdd(false);
-    setAddSearch('');
+
+    const run = async () => {
+      try {
+        setLoading(true);
+        await tradingService.addToWatchlist(activeWl, {
+          symbol: sym,
+          exchange: stock?.exchange || 'NSE',
+          stock_name: stock?.name || stock?.stock_name || null,
+        });
+        const res = await tradingService.getWatchlists();
+        const list = res?.data || [];
+        setWatchlists(Array.isArray(list) ? list : []);
+        toast.success(`${sym} added to watchlist`);
+        setShowAdd(false);
+        setAddSearch('');
+      } catch (e) {
+        toast.error(e?.message || 'Failed to add stock');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    run();
   };
 
   return (
@@ -500,7 +576,7 @@ const Watchlist = () => {
                           <Bell size={15}/>
                         </button>
                         <button
-                          onClick={() => handleRemoveItem(item.symbol)}
+                          onClick={() => handleRemoveItem(item)}
                           className="p-1.5 rounded-lg text-[var(--text-tertiary)]
                                      hover:text-[var(--loss)] hover:bg-[var(--loss-bg)]
                                      transition-all duration-200"

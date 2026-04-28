@@ -227,6 +227,15 @@ const CandlestickChart = ({ stock, interval, candles = [], liveCandle }) => {
       },
     });
 
+    // Ensure initial size is set (container can be 0 during first paint/layout).
+    if (containerRef.current) {
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
+      if (w > 0 && h > 0) {
+        chart.applyOptions({ width: w, height: h });
+      }
+    }
+
     /* Candlestick series */
     const candle = chart.addCandlestickSeries({
       upColor:         '#00E676',
@@ -251,7 +260,11 @@ const CandlestickChart = ({ stock, interval, candles = [], liveCandle }) => {
     /* Resize observer */
     const ro = new ResizeObserver(() => {
       if (containerRef.current) {
-        chart.applyOptions({ width: containerRef.current.clientWidth });
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        if (w > 0 && h > 0) {
+          chart.applyOptions({ width: w, height: h });
+        }
       }
     });
     ro.observe(containerRef.current);
@@ -574,48 +587,33 @@ const OrderForm = ({ stock, selectedPrice }) => {
     </div>
   );
 };
-
-/* ══════════════════════════════════════════════
-   MAIN STOCK DETAIL PAGE
-══════════════════════════════════════════════ */
+/* MAIN STOCK DETAIL PAGE */
 const StockDetail = () => {
-  const { symbol }            = useParams();
-  const navigate              = useNavigate();
+  const { symbol: rawSymbol } = useParams();
+  const symbol = decodeURIComponent(rawSymbol || '');
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [stock, setStock]     = useState(null);
-  const [interval, setUiInterval] = useState('1D');
+  const [tab, setTab] = useState('overview');
+  const [watchlisted, setWatchlisted] = useState(false);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const watchlistCtxRef = useRef({ watchlistId: null, itemId: null });
   const [marketStatus, setMarketStatus] = useState({ status: 'closed' });
   const [chartCandles, setChartCandles] = useState([]);
   const [chartLiveCandle, setChartLiveCandle] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
-  const [selectedPrice, setSelectedPrice] = useState(null);
-  const [watchlisted, setWatchlisted] = useState(false);
-  const [infoTab, setInfoTab] = useState('overview');
-  const ticks = useMarketStore((s) => s.ticks);
-  const depthByKey = useMarketStore((s) => s.depthByKey);
-  const orderBooksByKey = useMarketStore((s) => s.orderBooksByKey);
-  const liveAggRef = useRef(null);
-
-
-
-const cleanSymbol = symbol
-  ? toIndexDisplaySymbol(symbol)
-  : '';
-
-const indexSubscriptionItems = isIndexSymbol(symbol)
-  ? [cleanSymbol]
-  : [];
-
-const subscriptionPayload = {
-  symbols: symbol && !isIndexSymbol(symbol) ? [symbol] : [],
-  indices: indexSubscriptionItems,
-};
-
-useMarketSubscription({
-  ...subscriptionPayload,
-  enabled: Boolean(symbol),
-});
+  const { symbol: cleanSymbol } = useParams();
+  const indexSubscriptionItems = isIndexSymbol(symbol)
+    ? [cleanSymbol]
+    : [];
+  const subscriptionPayload = {
+    symbols: symbol && !isIndexSymbol(symbol) ? [symbol] : [],
+    indices: indexSubscriptionItems,
+  };
+  useMarketSubscription({
+    ...subscriptionPayload,
+    enabled: Boolean(symbol),
+  });
 
   const l2Symbol = useMemo(() => {
     if (!symbol) return '';
@@ -718,31 +716,6 @@ useMarketSubscription({
     };
   }, [symbol, intervalConfig.yahooInterval, intervalConfig.lookbackDays]);
 
-  const liveTick = useMemo(() => {
-    if (!symbol || !ticks?.length) return null;
-
-    const target = String(symbol).toUpperCase();
-    const indexDisplay = isIndexSymbol(symbol) ? toIndexDisplaySymbol(symbol) : '';
-    const yahooIndex = isIndexSymbol(symbol) ? toYahooIndexSymbol(symbol) : '';
-
-    const candidates = [target, indexDisplay, yahooIndex].filter(Boolean);
-
-    const direct = ticks.find((t) => {
-      const key = String(t.symbol || t.key || t.displaySymbol || '').toUpperCase();
-      return candidates.some((c) => key === String(c).toUpperCase());
-    });
-    if (direct) return direct;
-
-    const alt = ticks.find((t) => {
-      const key = String(t.symbol || t.key || '').toUpperCase();
-      return key.replace(/\.NS$/i, '').replace(/\.BO$/i, '') === target;
-    });
-    return alt || null;
-  }, [ticks, symbol]);
-
-
-
-
   useEffect(() => {
     let mounted = true;
 
@@ -751,22 +724,48 @@ useMarketSubscription({
         setLoading(true);
 
         if (isIndexSymbol(symbol)) {
-          const fallback = STOCK_MAP[symbol] || {
-            ...FALLBACK,
-            symbol,
-            name: toIndexDisplaySymbol(symbol),
-            sector: 'Index',
-            exchange: 'NSE',
-          };
+          const indexDisplay = toIndexDisplaySymbol(symbol);
 
-          if (mounted) setStock(fallback);
+          // Set a minimal placeholder immediately; real OHLCV comes from Yahoo quote + history.
+          if (mounted) {
+            setStock({
+              ...FALLBACK,
+              symbol: indexDisplay,
+              name: indexDisplay,
+              sector: 'Index',
+              exchange: 'NSE',
+            });
+          }
+
+          try {
+            const qRes = await tradingService.getStockQuote(indexDisplay);
+            if (!mounted) return;
+
+            const normalized = normalizeStockDetails(qRes, indexDisplay);
+            setStock((prev) => ({
+              ...(prev || {}),
+              ...normalized,
+              symbol: indexDisplay,
+              name: indexDisplay,
+              sector: 'Index',
+              exchange: normalized.exchange || 'NSE',
+            }));
+          } catch (_) {
+            // Keep placeholder; history loader will still populate chart.
+          }
           return;
         }
 
-        const response = await tradingService.getStockDetails(symbol);
-
-        if (!mounted) return;
-        setStock(normalizeStockDetails(response, symbol));
+        try {
+          const response = await tradingService.getStockDetails(symbol);
+          if (!mounted) return;
+          setStock(normalizeStockDetails(response, symbol));
+        } catch (_) {
+          // Fallback: quote endpoint is usually more reliable than details.
+          const qRes = await tradingService.getStockQuote(symbol);
+          if (!mounted) return;
+          setStock(normalizeStockDetails(qRes, symbol));
+        }
       } catch (error) {
         console.error('❌ Failed to load stock details:', error);
 
@@ -791,29 +790,121 @@ useMarketSubscription({
     };
 
     loadStock();
-
     return () => {
       mounted = false;
     };
   }, [symbol]);
 
-useEffect(() => {
-  if (!liveTick) return;
+  useEffect(() => {
+    let mounted = true;
 
-  setStock((prev) => {
-    if (!prev) return prev;
+    const ensureDefaultWatchlist = async () => {
+      const res = await tradingService.getWatchlists();
+      const wls = res?.data || [];
 
-    return {
-      ...prev,
-      price: Number(liveTick.price ?? prev.price),
-      prevClose: Number(liveTick.close ?? prev.prevClose),
-      open: Number(liveTick.open ?? prev.open),
-      high: Number(liveTick.high ?? prev.high),
-      low: Number(liveTick.low ?? prev.low),
-      volume: Number(liveTick.volume ?? prev.volume),
+      if (Array.isArray(wls) && wls.length > 0) return wls;
+
+      await tradingService.createWatchlist({ name: 'My Watchlist', color: '#0052FF' });
+      const res2 = await tradingService.getWatchlists();
+      return res2?.data || [];
     };
-  });
-}, [liveTick]);
+
+    const loadWatchlistState = async () => {
+      try {
+        setWatchlistLoading(true);
+        const wls = await ensureDefaultWatchlist();
+        if (!mounted) return;
+
+        const list = Array.isArray(wls) ? wls : [];
+        const defaultWl = list.find((w) => w?.is_default) || list[0] || null;
+        const items = defaultWl?.items || [];
+        const symKey = String(symbol || '').trim().toUpperCase();
+
+        const existing = Array.isArray(items)
+          ? items.find((it) => String(it?.symbol || '').trim().toUpperCase() === symKey)
+          : null;
+
+        watchlistCtxRef.current = {
+          watchlistId: defaultWl?.id || null,
+          itemId: existing?.id || null,
+        };
+        setWatchlisted(Boolean(existing));
+      } catch (_) {
+        if (!mounted) return;
+        watchlistCtxRef.current = { watchlistId: null, itemId: null };
+        setWatchlisted(false);
+      } finally {
+        if (!mounted) return;
+        setWatchlistLoading(false);
+      }
+    };
+
+    if (symbol) loadWatchlistState();
+    return () => {
+      mounted = false;
+    };
+  }, [symbol]);
+
+  useEffect(() => {
+    if (!liveTick) return;
+    if (isIndexSymbol(symbol)) return;
+
+    const now = Date.now();
+    if (now - lastStockUiUpdateRef.current < 250) return;
+    lastStockUiUpdateRef.current = now;
+
+    setStock((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        price: Number(liveTick.price ?? prev.price),
+        prevClose: Number(liveTick.close ?? prev.prevClose),
+        open: Number(liveTick.open ?? prev.open),
+        high: Number(liveTick.high ?? prev.high),
+        low: Number(liveTick.low ?? prev.low),
+        volume: Number(liveTick.volume ?? prev.volume),
+      };
+    });
+  }, [liveTick, symbol]);
+
+  const toggleWatchlist = async () => {
+    const symKey = String(symbol || '').trim();
+    if (!symKey) return;
+
+    const { watchlistId, itemId } = watchlistCtxRef.current || {};
+    if (!watchlistId) {
+      toast.error('No watchlist available');
+      return;
+    }
+
+    try {
+      setWatchlistLoading(true);
+
+      if (watchlisted && itemId) {
+        await tradingService.removeFromWatchlist(watchlistId, itemId);
+        watchlistCtxRef.current = { watchlistId, itemId: null };
+        setWatchlisted(false);
+        toast.success(`${symbol} removed from watchlist`);
+        return;
+      }
+
+      const payload = {
+        symbol: symKey,
+        exchange: stock?.exchange || 'NSE',
+        stock_name: stock?.name || null,
+      };
+      const created = await tradingService.addToWatchlist(watchlistId, payload);
+      const newItemId = created?.data?.id || created?.data?.data?.id || null;
+      watchlistCtxRef.current = { watchlistId, itemId: newItemId };
+      setWatchlisted(true);
+      toast.success(`${symbol} added to watchlist`);
+    } catch (e) {
+      toast.error(e?.message || 'Failed to update watchlist');
+    } finally {
+      setWatchlistLoading(false);
+    }
+  };
 
 useEffect(() => {
   if (!isIndexSymbol(symbol)) return;
@@ -844,6 +935,11 @@ useEffect(() => {
 
     if (!marketOpen || !intervalConfig.liveBucketSec || !liveTick?.price) {
       liveAggRef.current = null;
+      pendingLiveCandleRef.current = null;
+      if (liveCandleRafRef.current) {
+        cancelAnimationFrame(liveCandleRafRef.current);
+        liveCandleRafRef.current = 0;
+      }
       setChartLiveCandle(null);
       return;
     }
@@ -874,7 +970,15 @@ useEffect(() => {
       };
     }
 
-    setChartLiveCandle(liveAggRef.current);
+    // Batch chart updates to animation frames to avoid jitter and excessive renders.
+    pendingLiveCandleRef.current = liveAggRef.current;
+    if (!liveCandleRafRef.current) {
+      liveCandleRafRef.current = requestAnimationFrame(() => {
+        liveCandleRafRef.current = 0;
+        const next = pendingLiveCandleRef.current;
+        if (next) setChartLiveCandle(next);
+      });
+    }
   }, [liveTick, marketStatus?.status, intervalConfig.liveBucketSec]);
 
 
@@ -988,12 +1092,8 @@ useEffect(() => {
 
             {/* Watchlist toggle */}
             <button
-              onClick={() => {
-                setWatchlisted(!watchlisted);
-                toast.success(watchlisted
-                  ? `${symbol} removed from watchlist`
-                  : `${symbol} added to watchlist`);
-              }}
+              onClick={toggleWatchlist}
+              disabled={watchlistLoading}
               className="ml-auto p-2 rounded-xl bg-[var(--bg-card)]
                          border border-[var(--border-primary)]
                          transition-all duration-200

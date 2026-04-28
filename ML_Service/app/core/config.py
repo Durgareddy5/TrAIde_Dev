@@ -33,9 +33,11 @@ SYMBOLS = [
     "^CNXSC",      # NIFTY SMLCAP 100
 ]
 
+
 SEQ_LENGTH = 60
 
 MODEL_PATHS = {
     "lstm": "saved_models/lstm.h5",
-    "xgb": "saved_models/xgb.json"
+    "xgb": "saved_models/xgb.json",
+    "scaler": "saved_models/scaler.save"
 }

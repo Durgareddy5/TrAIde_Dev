@@ -34,6 +34,13 @@ export const searchStocks = async (req, res) => {
   try {
     const { q, limit, exchange } = req.query;
 
+    logger.info('Market search request', {
+      q,
+      limit,
+      exchange,
+      path: req.originalUrl,
+    });
+
     if (!q || q.trim().length < 1) {
       return ApiResponse.badRequest(res, 'Search query is required');
     }
@@ -43,6 +50,11 @@ export const searchStocks = async (req, res) => {
       Number.parseInt(limit, 10) || 15,
       exchange || undefined
     );
+
+    logger.info('Market search results', {
+      q,
+      count: Array.isArray(results) ? results.length : 0,
+    });
 
     return ApiResponse.success(res, {
       data: results,

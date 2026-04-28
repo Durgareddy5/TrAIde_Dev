@@ -10,6 +10,8 @@ import useAuthStore from '@/store/authStore';
 import useThemeStore from '@/store/themeStore';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import toast from 'react-hot-toast';
+import authService from '@/services/authService';
+import tradingService from '@/services/tradingService';
 
 
 const SETTING_TABS = [
@@ -52,6 +54,14 @@ const Settings = () => {
   const [activeTab, setActiveTab] = useState('profile');
   const [saving,    setSaving]    = useState(false);
   const [showPwd,   setShowPwd]   = useState({});
+  const [notifPrefs, setNotifPrefs] = useState(() => user?.notification_preferences || {});
+  const [defaultExchange, setDefaultExchange] = useState(() => user?.default_exchange || 'NSE');
+  const [defaultProductType, setDefaultProductType] = useState(() => user?.default_product_type || 'CNC');
+  const [pwdForm, setPwdForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: '',
+  });
 
   const { register, handleSubmit } = useForm({
     defaultValues: {
@@ -65,11 +75,61 @@ const Settings = () => {
   });
 
   const onSaveProfile = async (data) => {
-    setSaving(true);
-    await new Promise((r) => setTimeout(r, 900));
-    updateUser(data);
-    toast.success('Profile updated successfully!');
-    setSaving(false);
+    try {
+      setSaving(true);
+      await authService.updateProfile(data);
+      const prof = await authService.getProfile();
+      const nextUser = prof?.data?.data || prof?.data || null;
+      if (nextUser) updateUser(nextUser);
+      toast.success('Profile updated successfully!');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const savePreferences = async (patch) => {
+    try {
+      setSaving(true);
+      const res = await tradingService.updatePreferences(patch);
+      const nextUser = res?.data?.data || res?.data || null;
+      if (nextUser) updateUser(nextUser);
+      toast.success('Preferences saved!');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to save preferences');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleNotif = async (key) => {
+    const next = { ...(notifPrefs || {}), [key]: !Boolean(notifPrefs?.[key]) };
+    setNotifPrefs(next);
+    await savePreferences({ notification_preferences: next });
+  };
+
+  const handleChangePassword = async () => {
+    try {
+      const { current_password, new_password, confirm_password } = pwdForm;
+      if (!current_password || !new_password || !confirm_password) {
+        toast.error('Please fill all password fields');
+        return;
+      }
+      if (new_password !== confirm_password) {
+        toast.error('New password and confirm password do not match');
+        return;
+      }
+
+      setSaving(true);
+      await authService.changePassword({ current_password, new_password });
+      setPwdForm({ current_password: '', new_password: '', confirm_password: '' });
+      toast.success('Password updated successfully!');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to update password');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleShowPwd = (field) =>
@@ -259,16 +319,16 @@ const Settings = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => toast.success('Preference saved!')}
+                    onClick={() => handleToggleNotif(item.key)}
                     className={`relative w-11 h-6 rounded-full transition-all duration-300
                                flex-shrink-0
-                               ${item.default
+                               ${Boolean((notifPrefs || {})[item.key] ?? item.default)
                                  ? 'bg-[var(--accent-primary)]'
                                  : 'bg-[var(--bg-secondary)] border border-[var(--border-secondary)]'}`}
                   >
                     <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white
                                      shadow-sm transition-all duration-300
-                                     ${item.default ? 'left-5' : 'left-0.5'}`} />
+                                     ${Boolean((notifPrefs || {})[item.key] ?? item.default) ? 'left-5' : 'left-0.5'}`} />
                   </button>
                 </motion.div>
               ))}
@@ -296,6 +356,8 @@ const Settings = () => {
                     <div key={field} className="relative">
                       <input
                         type={showPwd[field] ? 'text' : 'password'}
+                        value={pwdForm[field]}
+                        onChange={(e) => setPwdForm((p) => ({ ...p, [field]: e.target.value }))}
                         placeholder={
                           field === 'current_password' ? 'Current password'
                           : field === 'new_password'   ? 'New password'
@@ -318,7 +380,7 @@ const Settings = () => {
                     </div>
                   ))}
                   <button
-                    onClick={() => toast.success('Password updated successfully!')}
+                    onClick={handleChangePassword}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-lg
                                text-sm font-semibold text-white
                                bg-[var(--accent-primary)]
@@ -394,10 +456,13 @@ const Settings = () => {
                   {['NSE', 'BSE'].map((ex) => (
                     <button
                       key={ex}
-                      onClick={() => toast.success(`Default exchange set to ${ex}`)}
+                      onClick={async () => {
+                        setDefaultExchange(ex);
+                        await savePreferences({ default_exchange: ex });
+                      }}
                       className={`px-4 py-2 rounded-lg text-sm font-semibold
                                  border transition-all duration-200
-                                 ${ex === 'NSE'
+                                 ${ex === defaultExchange
                                    ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30'
                                    : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-primary)] hover:border-[var(--border-secondary)]'}`}
                       style={{padding: '0.25rem'}}
@@ -418,10 +483,13 @@ const Settings = () => {
                   {['CNC', 'MIS', 'NRML'].map((pt) => (
                     <button
                       key={pt}
-                      onClick={() => toast.success(`Default product set to ${pt}`)}
+                      onClick={async () => {
+                        setDefaultProductType(pt);
+                        await savePreferences({ default_product_type: pt });
+                      }}
                       className={`px-4 py-2 rounded-lg text-sm font-semibold
                                  border transition-all duration-200
-                                 ${pt === 'CNC'
+                                 ${pt === defaultProductType
                                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
                                    : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-primary)] hover:border-[var(--border-secondary)]'}`}
                       style={{padding: '0.25rem'}}
