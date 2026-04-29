@@ -676,6 +676,8 @@ const StockDetail = () => {
   const [watchlisted, setWatchlisted] = useState(false);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const watchlistCtxRef = useRef({ watchlistId: null, itemId: null });
+
+  const unwrapApiData = (res) => res?.data?.data ?? res?.data ?? res;
   const [marketStatus, setMarketStatus] = useState({ status: 'closed' });
   const [chartCandles, setChartCandles] = useState([]);
   const [chartLiveCandle, setChartLiveCandle] = useState(null);
@@ -924,13 +926,13 @@ const StockDetail = () => {
 
     const ensureDefaultWatchlist = async () => {
       const res = await tradingService.getWatchlists();
-      const wls = res?.data || [];
+      const wls = unwrapApiData(res) || [];
 
       if (Array.isArray(wls) && wls.length > 0) return wls;
 
       await tradingService.createWatchlist({ name: 'My Watchlist', color: '#0052FF' });
       const res2 = await tradingService.getWatchlists();
-      return res2?.data || [];
+      return unwrapApiData(res2) || [];
     };
 
     const loadWatchlistState = async () => {
@@ -997,12 +999,60 @@ const StockDetail = () => {
       return;
     }
 
+    const resolveItemId = async () => {
+      const res = await tradingService.getWatchlists();
+      const list = unwrapApiData(res) || [];
+      const wls = Array.isArray(list) ? list : [];
+      const wl = wls.find((w) => w?.id === watchlistId) || wls.find((w) => w?.is_default) || wls[0] || null;
+      const items = wl?.items || [];
+      const target = String(symKey).trim().toUpperCase();
+      const found = Array.isArray(items)
+        ? items.find((it) => String(it?.symbol || '').trim().toUpperCase() === target)
+        : null;
+      return { watchlistId: wl?.id || watchlistId || null, itemId: found?.id || null };
+    };
+
     try {
       setWatchlistLoading(true);
 
-      if (watchlisted && itemId) {
-        await tradingService.removeFromWatchlist(watchlistId, itemId);
-        watchlistCtxRef.current = { watchlistId, itemId: null };
+      if (watchlisted) {
+        let effectiveItemId = itemId;
+        let effectiveWatchlistId = watchlistId;
+
+        if (!effectiveItemId) {
+          const resolved = await resolveItemId();
+          effectiveItemId = resolved.itemId;
+          effectiveWatchlistId = resolved.watchlistId;
+        }
+
+        if (!effectiveItemId) {
+          watchlistCtxRef.current = { watchlistId: effectiveWatchlistId, itemId: null };
+          setWatchlisted(false);
+          toast.error('Watchlist item not found');
+          return;
+        }
+
+        try {
+          await tradingService.removeFromWatchlist(effectiveWatchlistId, effectiveItemId);
+        } catch (err) {
+          const msg = String(err?.message || '');
+          if (msg.toLowerCase().includes('watchlist item not found')) {
+            const resolved = await resolveItemId();
+            if (resolved?.itemId) {
+              await tradingService.removeFromWatchlist(resolved.watchlistId, resolved.itemId);
+              effectiveWatchlistId = resolved.watchlistId;
+            } else {
+              watchlistCtxRef.current = { watchlistId: effectiveWatchlistId, itemId: null };
+              setWatchlisted(false);
+              toast.error('Watchlist item not found');
+              return;
+            }
+          } else {
+            throw err;
+          }
+        }
+
+        watchlistCtxRef.current = { watchlistId: effectiveWatchlistId, itemId: null };
         setWatchlisted(false);
         toast.success(`${symbol} removed from watchlist`);
         return;
@@ -1014,7 +1064,8 @@ const StockDetail = () => {
         stock_name: stock?.name || null,
       };
       const created = await tradingService.addToWatchlist(watchlistId, payload);
-      const newItemId = created?.data?.id || created?.data?.data?.id || null;
+      const createdItem = unwrapApiData(created);
+      const newItemId = createdItem?.id || null;
       watchlistCtxRef.current = { watchlistId, itemId: newItemId };
       setWatchlisted(true);
       toast.success(`${symbol} added to watchlist`);
