@@ -1423,4 +1423,3 @@ useEffect(() => {
 };
 
 export default StockDetail;
-
