@@ -113,9 +113,9 @@ const Watchlist = () => {
 
         return {
           ...wl,
-          items: wl.items.map((item) => {
+            items: wl.items.map((item) => {
             const liveTick = Object.values(ticksByKey || {}).find(
-              (tick) => tick.symbol?.toUpperCase() === item.symbol?.toUpperCase()
+              (tick) => (tick.displaySymbol || tick.symbol || '').toUpperCase() === String(item.symbol || '').toUpperCase()
             );
 
             if (!liveTick) return item;
@@ -303,7 +303,7 @@ const Watchlist = () => {
                     <p className="text-sm font-medium text-[var(--text-primary)]
                                   truncate">{wl.name}</p>
                     <p className="text-xs text-[var(--text-tertiary)]">
-                      {wl.items.length} stocks
+                      {(wl.items || []).length} stocks
                     </p>
                   </div>
                   {activeWl === wl.id && (
@@ -513,10 +513,10 @@ const Watchlist = () => {
             ) : (
               <div className="divide-y divide-[var(--border-primary)]">
                 {filteredItems.map((item, i) => {
-                  const up = item.pct >= 0;
+                  const up = (item?.pct ?? 0) >= 0;
                   return (
                     <motion.div
-                      key={item.symbol}
+                      key={`${item.symbol}-${i}`}
                       initial={{ opacity:0 }}
                       animate={{ opacity:1 }}
                       transition={{ delay: i * 0.04 }}
@@ -549,7 +549,7 @@ const Watchlist = () => {
                         <p className={`text-xs font-mono flex items-center
                                        justify-end gap-0.5 ${getPnLColor(item.pct)}`}>
                           {up ? <ArrowUpRight size={12}/> : <ArrowDownRight size={12}/>}
-                          {item.change >= 0 ? '+' : ''}{item.change.toFixed(2)}
+                          {typeof item.change === 'number' ? (item.change >= 0 ? '+' : '') + item.change.toFixed(2) : '0.00'}
                           {' '}({formatPercent(item.pct)})
                         </p>
                       </div>

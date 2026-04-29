@@ -68,7 +68,7 @@ export const addItem = async (req, res) => {
     );
 
     await ActivityLog.create({
-      user_id: req.user.id, action: 'stock_added_to_watchlist', category: 'watchlist',
+      user_id: req.user.id, action: 'watchlist_item_added', category: 'watchlist',
       description: `Added ${req.body.symbol} to watchlist`, ip_address: req.ip,
     });
 
@@ -88,7 +88,7 @@ export const removeItem = async (req, res) => {
     );
 
     await ActivityLog.create({
-      user_id: req.user.id, action: 'stock_removed_from_watchlist', category: 'watchlist',
+      user_id: req.user.id, action: 'watchlist_item_removed', category: 'watchlist',
       description: `Removed stock from watchlist`, ip_address: req.ip,
     });
 
