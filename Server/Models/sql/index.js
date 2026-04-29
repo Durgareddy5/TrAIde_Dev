@@ -10,6 +10,7 @@ import Watchlist from './Watchlist.js';
 import WatchlistItem from './WatchlistItem.js';
 import TradeLog from './TradeLog.js';
 import PriceAlert from './PriceAlert.js';
+import PortfolioSnapshot from './PortfolioSnapshot.js';
 
 // ═══════════════════════════════════════════════════════
 // Define Associations (Relationships)
@@ -59,6 +60,10 @@ TradeLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(PriceAlert, { foreignKey: 'user_id', as: 'priceAlerts' });
 PriceAlert.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+// User ↔ PortfolioSnapshot (One-to-Many)
+User.hasMany(PortfolioSnapshot, { foreignKey: 'user_id', as: 'portfolioSnapshots' });
+PortfolioSnapshot.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 // FundTransaction ↔ Order (Optional relationship)
 FundTransaction.belongsTo(Order, { foreignKey: 'reference_id', as: 'relatedOrder', constraints: false });
 
@@ -75,4 +80,5 @@ export {
   WatchlistItem,
   TradeLog,
   PriceAlert,
+  PortfolioSnapshot,
 };

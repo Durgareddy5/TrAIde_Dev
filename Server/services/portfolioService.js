@@ -1,7 +1,7 @@
 // ============================================
 // Portfolio Service — Holdings, Positions, P&L
 // ============================================
-import { Holding, Position, TradeLog, Fund } from '../Models/sql/index.js';
+import { Holding, Position, TradeLog, Fund, PortfolioSnapshot } from '../Models/sql/index.js';
 import { Op } from 'sequelize';
 import { getStockPrice } from './orderService.js';
 import logger from '../utils/logger.js';
@@ -30,6 +30,10 @@ const getPeriodCutoff = (period) => {
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
 const monthLabel = (d) => d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+const dayKey = (d) => {
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
 
 const computeRealizedPnL = (trades) => {
   // FIFO matching with support for both long and short selling.
@@ -470,6 +474,73 @@ const getAnalytics = async (userId, filters = {}) => {
   };
 };
 
+const getPortfolioTrend = async (userId, options = {}) => {
+  const days = Math.max(7, Math.min(Number(options.days || 30), 365));
+  const today = new Date();
+  const from = new Date(today);
+  from.setDate(from.getDate() - (days - 1));
+
+  const summary = await getPortfolioSummary(userId);
+  const todayKey = dayKey(today);
+
+  await PortfolioSnapshot.upsert({
+    user_id: userId,
+    snapshot_date: todayKey,
+    equity_value: Number(summary.current_value || 0),
+    invested_value: Number(summary.total_invested || 0),
+    pnl_value: Number(summary.total_pnl || 0),
+  });
+
+  const snapshots = await PortfolioSnapshot.findAll({
+    where: {
+      user_id: userId,
+      snapshot_date: { [Op.gte]: dayKey(from) },
+    },
+    order: [['snapshot_date', 'ASC']],
+  });
+
+  const byDate = new Map(
+    (snapshots || []).map((s) => [
+      String(s.snapshot_date),
+      {
+        equity_value: Number(s.equity_value || 0),
+        invested_value: Number(s.invested_value || 0),
+        pnl_value: Number(s.pnl_value || 0),
+      },
+    ])
+  );
+
+  let lastEquity = Number(summary.current_value || 0);
+  let lastInvested = Number(summary.total_invested || 0);
+  let lastPnl = Number(summary.total_pnl || 0);
+
+  const points = [];
+  for (let i = 0; i < days; i += 1) {
+    const d = new Date(from);
+    d.setDate(from.getDate() + i);
+    const key = dayKey(d);
+    const snap = byDate.get(key);
+
+    if (snap) {
+      lastEquity = snap.equity_value;
+      lastInvested = snap.invested_value;
+      lastPnl = snap.pnl_value;
+    }
+
+    points.push({
+      date: key,
+      equity_value: Number(lastEquity.toFixed(2)),
+      invested_value: Number(lastInvested.toFixed(2)),
+      pnl_value: Number(lastPnl.toFixed(2)),
+    });
+  }
+
+  return {
+    days,
+    points,
+  };
+};
+
 export {
   getHoldings,
   getPortfolioSummary,
@@ -478,6 +549,7 @@ export {
   squareOffAllPositions,
   getTradeLogs,
   getAnalytics,
+  getPortfolioTrend,
 };
 
 export default {
@@ -488,4 +560,5 @@ export default {
   squareOffAllPositions,
   getTradeLogs,
   getAnalytics,
+  getPortfolioTrend,
 };

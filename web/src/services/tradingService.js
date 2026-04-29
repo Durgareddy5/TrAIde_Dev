@@ -21,6 +21,7 @@ const tradingService = {
 
   // Analytics
   getAnalytics: (params) => api.get('/portfolio/analytics', { params }),
+  getPortfolioTrend: (params) => api.get('/portfolio/trend', { params }),
 
   // Trade Logs
   getTradeLogs: (params) => api.get('/trades', { params }),

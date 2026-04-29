@@ -253,11 +253,18 @@ const getHistorical = async ({ symbol, period1, period2, interval = '1d' }) => {
     throw new Error('Symbol is required');
   }
 
-  const rows = await yahooFinance.historical(ySymbol, {
-    period1,
-    period2,
-    interval,
-  });
+  let rows = [];
+  try {
+    rows = await yahooFinance.historical(ySymbol, {
+      period1,
+      period2,
+      interval,
+    });
+  } catch (_) {
+    // Some providers reject intraday combinations for `historical`.
+    // Fall back to chart API below instead of failing the whole request.
+    rows = [];
+  }
 
   const mapped = (rows || []).map((row) => ({
     time: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),

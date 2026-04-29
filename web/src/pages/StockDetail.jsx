@@ -160,6 +160,14 @@ const getIntervalConfig = (uiInterval, marketStatus) => {
   }
 
   switch (uiInterval) {
+    case '5m':
+      return { yahooInterval: '5m', lookbackDays: 7, liveBucketSec: 5 * 60 };
+    case '15m':
+      return { yahooInterval: '15m', lookbackDays: 14, liveBucketSec: 15 * 60 };
+    case '30m':
+      return { yahooInterval: '30m', lookbackDays: 21, liveBucketSec: 30 * 60 };
+    case '1h':
+      return { yahooInterval: '60m', lookbackDays: 30, liveBucketSec: 60 * 60 };
     case '1D':
       return { yahooInterval: '5m', lookbackDays: 7, liveBucketSec: 5 * 60 };
     case '1W':
@@ -183,13 +191,47 @@ const toUnixSec = (value) => {
   return Math.floor(ms / 1000);
 };
 
+const toEpochMs = (value) => {
+  const numeric = Number(value || 0);
+  if (numeric > 0) {
+    return numeric > 9_999_999_999 ? numeric : numeric * 1000;
+  }
+  const parsed = Date.parse(String(value || ''));
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+};
+
 /* ─── Lightweight Chart wrapper ──────────────── */
-const CandlestickChart = ({ stock, interval, candles = [], liveCandle }) => {
+const CandlestickChart = ({
+  stock,
+  interval,
+  candles = [],
+  liveCandle,
+  autoFollow = true,
+  followLagSec = 60,
+  onAutoFollowChange,
+  goToRealtimeSignal = 0,
+}) => {
   const containerRef = useRef(null);
   const chartRef     = useRef(null);
   const candleRef    = useRef(null);
   const volRef       = useRef(null);
   const fittedKeyRef = useRef('');
+  const autoFollowRef = useRef(autoFollow);
+  const latestLiveTimeRef = useRef(null);
+  const ignoreRangeEventRef = useRef(false);
+
+  const toRangeSec = (value) => {
+    if (typeof value === 'number') return value;
+    if (value && typeof value === 'object' && 'year' in value && 'month' in value && 'day' in value) {
+      const ms = Date.UTC(value.year, value.month - 1, value.day);
+      return Math.floor(ms / 1000);
+    }
+    return toUnixSec(value);
+  };
+
+  useEffect(() => {
+    autoFollowRef.current = autoFollow;
+  }, [autoFollow]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -273,14 +315,32 @@ const CandlestickChart = ({ stock, interval, candles = [], liveCandle }) => {
     candleRef.current = candle;
     volRef.current    = vol;
 
+    const onVisibleRangeChange = (range) => {
+      if (!autoFollowRef.current) return;
+      if (ignoreRangeEventRef.current) return;
+      if (!range || !latestLiveTimeRef.current) return;
+
+      const visibleToSec = toRangeSec(range.to);
+      if (!visibleToSec) return;
+
+      const lagSec = Number(latestLiveTimeRef.current) - Number(visibleToSec);
+      const thresholdSec = Math.max(30, Number(followLagSec || 60) * 1.5);
+      if (lagSec > thresholdSec) {
+        onAutoFollowChange?.(false);
+      }
+    };
+
+    chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleRangeChange);
+
     return () => {
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleRangeChange);
       ro.disconnect();
       chart.remove();
     };
-  }, [stock.symbol]);
+  }, [stock.symbol, followLagSec, onAutoFollowChange]);
 
   useEffect(() => {
-    if (!candleRef.current || !volRef.current || !stock) return;
+    if (!candleRef.current || !volRef.current) return;
 
     const data = Array.isArray(candles) ? candles : [];
 
@@ -300,10 +360,11 @@ const CandlestickChart = ({ stock, interval, candles = [], liveCandle }) => {
       fittedKeyRef.current = fitKey;
       chartRef.current.timeScale().fitContent();
     }
-  }, [candles, stock]);
+  }, [candles, stock?.symbol, interval]);
 
   useEffect(() => {
     if (!liveCandle || !candleRef.current || !volRef.current) return;
+    latestLiveTimeRef.current = liveCandle.time;
 
     candleRef.current.update(liveCandle);
     volRef.current.update({
@@ -313,7 +374,25 @@ const CandlestickChart = ({ stock, interval, candles = [], liveCandle }) => {
         ? 'rgba(0,230,118,0.4)'
         : 'rgba(255,23,68,0.4)',
     });
-  }, [liveCandle]);
+
+    if (autoFollow && chartRef.current) {
+      ignoreRangeEventRef.current = true;
+      chartRef.current.timeScale().scrollToRealTime();
+      requestAnimationFrame(() => {
+        ignoreRangeEventRef.current = false;
+      });
+    }
+  }, [liveCandle, autoFollow]);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (!goToRealtimeSignal) return;
+    ignoreRangeEventRef.current = true;
+    chartRef.current.timeScale().scrollToRealTime();
+    requestAnimationFrame(() => {
+      ignoreRangeEventRef.current = false;
+    });
+  }, [goToRealtimeSignal]);
 
   return (
     <div ref={containerRef} className="w-full h-[380px]" />
@@ -622,10 +701,11 @@ const StockDetail = () => {
 
   const [stock, setStock] = useState(null);
   const [interval, setUiInterval] = useState('1D');
+  const [autoFollowLive, setAutoFollowLive] = useState(true);
+  const [goToRealtimeSignal, setGoToRealtimeSignal] = useState(0);
   const [infoTab, setInfoTab] = useState('overview');
   const [selectedPrice, setSelectedPrice] = useState(null);
 
-  const lastStockUiUpdateRef = useRef(0);
   const liveAggRef = useRef(null);
   const pendingLiveCandleRef = useRef(null);
   const liveCandleRafRef = useRef(0);
@@ -638,7 +718,34 @@ const StockDetail = () => {
     return `${raw}.NS`;
   }, [symbol]);
 
-  const liveTick = ticksByKey?.[l2Symbol] || null;
+  const liveTick = useMemo(() => {
+    if (!ticksByKey) return null;
+
+    // Fast-path for exact socket/store key.
+    if (ticksByKey[l2Symbol]) return ticksByKey[l2Symbol];
+
+    // Fallback for mixed key formats (e.g. RELIANCE vs RELIANCE.NS).
+    const targetKey = normalizeSymbol(symbol);
+    return Object.values(ticksByKey).find((tick) => {
+      const symbolKey = normalizeSymbol(tick?.symbol || '');
+      const displayKey = normalizeSymbol(tick?.displaySymbol || '');
+      const storeKey = normalizeSymbol(tick?.key || '');
+      return symbolKey === targetKey || displayKey === targetKey || storeKey === targetKey;
+    }) || null;
+  }, [ticksByKey, l2Symbol, symbol]);
+
+  const isPriceLive = useMemo(() => {
+    const status = String(marketStatus?.status || '').toLowerCase();
+    const marketOpen = status === 'open' || status === 'pre_open';
+    const tickTs = toEpochMs(liveTick?.timestamp || liveTick?.time || 0);
+    const recentTick = Date.now() - tickTs <= 15_000;
+    return marketOpen && recentTick;
+  }, [marketStatus?.status, liveTick]);
+
+  const hasRecentTick = useMemo(() => {
+    const tickTs = toEpochMs(liveTick?.timestamp || liveTick?.time || 0);
+    return Date.now() - tickTs <= 30_000;
+  }, [liveTick]);
 
   const book = orderBooksByKey?.[l2Symbol] || null;
 
@@ -666,10 +773,10 @@ const StockDetail = () => {
     };
   }, []);
 
-  const intervalConfig = useMemo(
-    () => getIntervalConfig(interval, marketStatus?.status),
-    [interval, marketStatus?.status]
-  );
+  const intervalConfig = useMemo(() => {
+    const effectiveStatus = hasRecentTick ? 'open' : marketStatus?.status;
+    return getIntervalConfig(interval, effectiveStatus);
+  }, [interval, marketStatus?.status, hasRecentTick]);
 
   useEffect(() => {
     let mounted = true;
@@ -864,11 +971,6 @@ const StockDetail = () => {
 
   useEffect(() => {
     if (!liveTick) return;
-    if (isIndexSymbol(symbol)) return;
-
-    const now = Date.now();
-    if (now - lastStockUiUpdateRef.current < 250) return;
-    lastStockUiUpdateRef.current = now;
 
     setStock((prev) => {
       if (!prev) return prev;
@@ -948,7 +1050,7 @@ useEffect(() => {
 
   useEffect(() => {
     const status = String(marketStatus?.status || '').toLowerCase();
-    const marketOpen = status === 'open' || status === 'pre_open';
+    const marketOpen = status === 'open' || status === 'pre_open' || hasRecentTick;
 
     if (!marketOpen || !intervalConfig.liveBucketSec || !liveTick?.price) {
       liveAggRef.current = null;
@@ -961,10 +1063,11 @@ useEffect(() => {
       return;
     }
 
-    const tsMs = Number(liveTick.timestamp || Date.now());
+    const tsMs = toEpochMs(liveTick.timestamp || liveTick.time || Date.now());
     const bucketMs = Math.floor(tsMs / (intervalConfig.liveBucketSec * 1000)) * (intervalConfig.liveBucketSec * 1000);
     const candleTime = Math.floor(bucketMs / 1000);
-    const price = Number(liveTick.price);
+    const price = Number(liveTick.price ?? liveTick.ltp ?? liveTick.last_price ?? liveTick.close ?? 0);
+    if (!Number.isFinite(price) || price <= 0) return;
 
     const prev = liveAggRef.current;
 
@@ -996,7 +1099,7 @@ useEffect(() => {
         if (next) setChartLiveCandle(next);
       });
     }
-  }, [liveTick, marketStatus?.status, intervalConfig.liveBucketSec]);
+  }, [liveTick, marketStatus?.status, intervalConfig.liveBucketSec, hasRecentTick]);
 
 
 
@@ -1011,7 +1114,7 @@ useEffect(() => {
     { key:'news',          label:'News'         },
   ];
 
-  const INTERVALS = ['1D','1W','1M','3M','6M','1Y'];
+  const INTERVALS = ['5m', '15m', '30m', '1h', '1D', '1W', '1M', '3M', '6M', '1Y'];
 
   /* live market depth */
   const liveDepthEntry = useMemo(() => (
@@ -1099,6 +1202,15 @@ useEffect(() => {
                                text-[var(--text-primary)]">
                 {formatINR(stock.price)}
               </span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${
+                  isPriceLive
+                    ? 'text-[var(--profit)] border-[var(--profit)]/40 bg-[var(--profit)]/10'
+                    : 'text-[var(--text-tertiary)] border-[var(--border-primary)] bg-[var(--bg-tertiary)]'
+                }`}
+              >
+                {isPriceLive ? 'Live' : 'Delayed'}
+              </span>
               <span className={`flex items-center gap-1 text-sm
                                font-mono font-semibold ${getPnLColor(change)}`}>
                 {isUp ? <ArrowUpRight size={16}/> : <ArrowDownRight size={16}/>}
@@ -1150,8 +1262,29 @@ useEffect(() => {
                 ))}
               </div>
 
-              <div className="hidden sm:flex gap-4 text-xs font-mono
-                             text-[var(--text-tertiary)]">
+              <div className="hidden sm:flex items-center gap-3">
+                <button
+                  onClick={() => setAutoFollowLive((v) => !v)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wider border transition-all duration-200 ${
+                    autoFollowLive
+                      ? 'text-[var(--accent-primary)] border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/10'
+                      : 'text-[var(--text-tertiary)] border-[var(--border-primary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {autoFollowLive ? 'Follow: On' : 'Follow: Off'}
+                </button>
+                {!autoFollowLive && (
+                  <button
+                    onClick={() => {
+                      setAutoFollowLive(true);
+                      setGoToRealtimeSignal((v) => v + 1);
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wider border transition-all duration-200 text-[var(--profit)] border-[var(--profit)]/40 bg-[var(--profit)]/10 hover:bg-[var(--profit)]/15"
+                  >
+                    Go to realtime
+                  </button>
+                )}
+                <div className="flex gap-4 text-xs font-mono text-[var(--text-tertiary)]">
                 {stock && [
                   { l:'O', v: stock.open  },
                   { l:'H', v: stock.high  },
@@ -1165,6 +1298,7 @@ useEffect(() => {
                     </span>
                   </span>
                 ))}
+                </div>
               </div>
             </div>
 
@@ -1178,9 +1312,13 @@ useEffect(() => {
                       interval={interval}
                       candles={chartCandles}
                       liveCandle={chartLiveCandle}
+                      autoFollow={autoFollowLive}
+                      followLagSec={intervalConfig.liveBucketSec || 60}
+                      onAutoFollowChange={setAutoFollowLive}
+                      goToRealtimeSignal={goToRealtimeSignal}
                     />
 
-                    {!chartCandles?.length && (
+                    {!chartCandles?.length && !chartLiveCandle && !hasRecentTick && (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="flex items-center gap-2 text-sm text-[var(--text-tertiary)] bg-[var(--bg-card)]/70 px-4 py-2 rounded-xl border border-[var(--border-primary)]">
                           <AlertCircle className="w-4 h-4" />

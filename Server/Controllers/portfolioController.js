@@ -105,6 +105,17 @@ export const getAnalytics = async (req, res) => {
   }
 };
 
+export const getPortfolioTrend = async (req, res) => {
+  try {
+    const days = Number.parseInt(req.query.days, 10) || 30;
+    const trend = await portfolioService.getPortfolioTrend(req.user.id, { days });
+    return ApiResponse.success(res, { data: trend });
+  } catch (error) {
+    logger.error('GetPortfolioTrend error:', { error: error.message });
+    return ApiResponse.serverError(res);
+  }
+};
+
 export default {
   getHoldings,
   getPositions,
@@ -113,4 +124,5 @@ export default {
   getPortfolioSummary,
   getTradeLogs,
   getAnalytics,
+  getPortfolioTrend,
 };

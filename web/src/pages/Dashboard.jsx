@@ -84,8 +84,11 @@ const SummaryCard = ({
   );
 };
 
-const IndexPill = ({ name, value, change, changePercent }) => (
-  <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border-primary)] hover:border-[var(--border-secondary)] transition-all duration-200 cursor-pointer group">
+const IndexPill = ({ name, value, change, changePercent, onClick }) => (
+  <div
+    onClick={onClick}
+    className="flex items-center justify-between px-4 py-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border-primary)] hover:border-[var(--border-secondary)] transition-all duration-200 cursor-pointer group"
+  >
     <div>
       <p className="text-xs text-[var(--text-tertiary)] mb-0.5">{name}</p>
       <p className="font-mono font-semibold text-sm text-[var(--text-primary)]">
@@ -207,12 +210,20 @@ const Dashboard = () => {
   });
 
 
-  const generateChartData = () =>
-    Array.from({ length: 30 }, (_, i) => ({
-      date: new Date(Date.now() - (29 - i) * 24 * 3600 * 1000)
-        .toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-      value: 10000000 + Math.random() * 2000000 - 1000000,
+  const buildTrendFromSnapshots = (trendPayload, summaryPayload) => {
+    const points = Array.isArray(trendPayload?.points) ? trendPayload.points : [];
+    if (!points.length) {
+      return [{
+        date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+        value: Number(summaryPayload?.current_value || 0),
+      }];
+    }
+
+    return points.map((p) => ({
+      date: new Date(`${p.date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      value: Number(p.equity_value || 0),
     }));
+  };
 
   const normalizeHolding = (holding) => ({
     ...holding,
@@ -237,13 +248,14 @@ const Dashboard = () => {
     try {
       setRefreshing(true);
 
-      const [fundsRes, summaryRes, holdingsRes, positionsRes, indicesRes, tradesRes] = await Promise.all([
+      const [fundsRes, summaryRes, holdingsRes, positionsRes, indicesRes, tradesRes, trendRes] = await Promise.all([
         tradingService.getFunds(),
         tradingService.getPortfolioSummary(),
         tradingService.getHoldings(),
         tradingService.getPositions({ status: 'open' }),
         tradingService.getMarketIndices(),
         tradingService.getTradeLogs({ page: 1, limit: 5 }),
+        tradingService.getPortfolioTrend({ days: 30 }),
       ]);
 
       setFunds(fundsRes?.data || null);
@@ -268,7 +280,7 @@ const Dashboard = () => {
           .filter(Boolean)
       );
 
-      setChartData(generateChartData());
+      setChartData(buildTrendFromSnapshots(trendRes?.data, summaryRes?.data));
     } catch (error) {
       console.error('Dashboard fetch error:', error);
     } finally {
@@ -446,7 +458,7 @@ const Dashboard = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">Portfolio Trend</h2>
-              <p className="text-sm text-[var(--text-secondary)]">Last 30 days</p>
+              <p className="text-sm text-[var(--text-secondary)]">Daily equity curve from DB snapshots</p>
             </div>
             <Badge variant="default">Live</Badge>
           </div>
@@ -506,6 +518,7 @@ const Dashboard = () => {
                     value={idx.value}
                     change={idx.change}
                     changePercent={idx.changePercent}
+                    onClick={() => navigate(`/stock/${idx.symbol}`)}
                   />
                 ))}
           </div>
