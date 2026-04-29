@@ -26,6 +26,7 @@ def run_prediction():
 
             df = df[["Close", "Volume"]].copy()
             df.dropna(inplace=True)
+            
 
             df = add_features(df)
 

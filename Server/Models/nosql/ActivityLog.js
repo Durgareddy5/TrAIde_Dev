@@ -29,6 +29,8 @@ const activityLogSchema = new mongoose.Schema({
       // Watchlist
       'watchlist_created', 'watchlist_deleted', 'watchlist_item_added',
       'watchlist_item_removed',
+      'stock_added_to_watchlist',
+      'stock_removed_from_watchlist',
       
       // Funds
       'fund_deposited', 'fund_withdrawn',

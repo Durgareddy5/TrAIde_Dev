@@ -69,6 +69,8 @@ const Watchlist = () => {
   const [addSearch,    setAddSearch]    = useState('');
   const ticksByKey = useMarketStore((s) => s.ticksByKey);
 
+  const unwrapApiData = (res) => res?.data?.data ?? res?.data ?? res;
+
   const currentWl = watchlists.find((w) => w.id === activeWl);
 
 
@@ -79,7 +81,7 @@ const Watchlist = () => {
       try {
         setLoading(true);
         const res = await tradingService.getWatchlists();
-        const rows = res?.data || [];
+        const rows = unwrapApiData(res) || [];
         if (!mounted) return;
 
         const list = Array.isArray(rows) ? rows : [];
@@ -141,7 +143,7 @@ const Watchlist = () => {
   const filteredItems = currentWl?.items.filter((item) =>
     search
       ? item.symbol.toLowerCase().includes(search.toLowerCase()) ||
-        item.name.toLowerCase().includes(search.toLowerCase())
+        String(item.name || item.stock_name || '').toLowerCase().includes(search.toLowerCase())
       : true
   ) || [];
 
@@ -156,7 +158,7 @@ const Watchlist = () => {
           color: newWlColor,
         });
 
-        const wl = created?.data || created?.data?.data || null;
+        const wl = unwrapApiData(created) || null;
         const next = wl ? [...watchlists, { ...wl, items: wl.items || [] }] : watchlists;
         setWatchlists(next);
         setActiveWl(wl?.id || activeWl);
@@ -202,7 +204,7 @@ const Watchlist = () => {
         setLoading(true);
         await tradingService.removeFromWatchlist(activeWl, item.id);
         const res = await tradingService.getWatchlists();
-        const list = res?.data || [];
+        const list = unwrapApiData(res) || [];
         setWatchlists(Array.isArray(list) ? list : []);
         toast.success(`${item.symbol} removed from watchlist`);
       } catch (e) {
@@ -233,7 +235,7 @@ const Watchlist = () => {
           stock_name: stock?.name || stock?.stock_name || null,
         });
         const res = await tradingService.getWatchlists();
-        const list = res?.data || [];
+        const list = unwrapApiData(res) || [];
         setWatchlists(Array.isArray(list) ? list : []);
         toast.success(`${sym} added to watchlist`);
         setShowAdd(false);
@@ -514,6 +516,10 @@ const Watchlist = () => {
               <div className="divide-y divide-[var(--border-primary)]">
                 {filteredItems.map((item, i) => {
                   const up = (item?.pct ?? 0) >= 0;
+                  const pctValue = Number(item.pct ?? 0);
+                  const changeValue = Number(item.change ?? 0);
+                  const up = pctValue >= 0;
+                  const displayName = item.name || item.stock_name || '';
                   return (
                     <motion.div
                       key={`${item.symbol}-${i}`}
@@ -536,7 +542,7 @@ const Watchlist = () => {
                           <p className="text-sm font-semibold
                                         text-[var(--text-primary)]">{item.symbol}</p>
                           <p className="text-xs text-[var(--text-tertiary)]
-                                        truncate max-w-[140px]">{item.name}</p>
+                                        truncate max-w-[140px]">{displayName}</p>
                         </div>
                       </div>
 
@@ -551,6 +557,8 @@ const Watchlist = () => {
                           {up ? <ArrowUpRight size={12}/> : <ArrowDownRight size={12}/>}
                           {typeof item.change === 'number' ? (item.change >= 0 ? '+' : '') + item.change.toFixed(2) : '0.00'}
                           {' '}({formatPercent(item.pct)})
+                          {changeValue >= 0 ? '+' : ''}{changeValue.toFixed(2)}
+                          {' '}({formatPercent(pctValue)})
                         </p>
                       </div>
 
