@@ -515,7 +515,6 @@ const Watchlist = () => {
             ) : (
               <div className="divide-y divide-[var(--border-primary)]">
                 {filteredItems.map((item, i) => {
-                  const up = (item?.pct ?? 0) >= 0;
                   const pctValue = Number(item.pct ?? 0);
                   const changeValue = Number(item.change ?? 0);
                   const up = pctValue >= 0;

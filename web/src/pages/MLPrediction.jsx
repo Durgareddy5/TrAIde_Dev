@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { motion } from 'framer-motion';
 import { getMLPredictions } from "../services/mlService";
 import PredictionTable from "../components/ML/PredictionTable";
 import tradingService from "@/services/tradingService";
@@ -104,18 +105,39 @@ export default function MLPrediction() {
   }, []);
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>🤖 AI Stock Predictions</h2>
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <motion.h1
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-2xl font-heading font-bold text-[var(--text-primary)]"
+          >
+            🤖 AI Stock Predictions
+          </motion.h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">Model-backed market predictions and index view</p>
+        </div>
 
-      <button onClick={fetchData} style={{ marginBottom: 10 }}>
-        Refresh
-      </button>
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          onClick={fetchData}
+          disabled={loading}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-primary)] text-sm text-[var(--text-secondary)] hover:border-[var(--border-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50 transition-all duration-200"
+        >
+          Refresh
+        </motion.button>
+      </div>
 
-      {loading ? (
-        <p>Loading predictions...</p>
-      ) : (
-        <PredictionTable data={data} />
-      )}
+      <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-md p-4">
+        <div style={{ padding: '0.25rem' }}>
+          {loading ? (
+            <p className="text-sm text-[var(--text-secondary)]">Loading predictions...</p>
+          ) : (
+            <PredictionTable data={data} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
